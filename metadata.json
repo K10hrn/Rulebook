@@ -1,0 +1,6 @@
+{
+  "name": "RuleBook",
+  "description": "Upload board game PDF rulebooks and chat with an AI expert to master the rules.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
