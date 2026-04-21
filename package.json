@@ -1,5 +1,6 @@
 {
-  "name": "react-example",
+  "name": "rulebook-arbiter",
+  "description": "An AI-powered board game rulebook assistant. Upload PDFs and get instant answers to your rule questions.",
   "private": true,
   "version": "0.0.0",
   "type": "module",

@@ -1,20 +1,71 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 🎲 RuleBook Arbiter
 
-# Run and deploy your AI Studio app
+RuleBook Arbiter is a modern web application designed to help you master any board game without the slog of reading a 40-page manual. Upload your PDFs, chat with an AI expert, and get back to the table faster.
 
-This contains everything you need to run your app locally.
+[![Deploy to GitHub Pages](https://github.com/K10hrn/Rulebook/actions/workflows/deploy.yml/badge.svg)](https://github.com/K10hrn/Rulebook/actions/workflows/deploy.yml)
 
-View your app in AI Studio: https://ai.studio/apps/a94c0597-6b5b-4ce7-b604-d8c31a928f08
+## ✨ Features
 
-## Run Locally
+-   **📄 Smart PDF Upload**: Drag and drop your favorite rulebooks directly into the browser.
+-   **🤖 AI Rules Expert**: Powered by Gemini 2.0, get context-aware answers calibrated specifically to the rules text.
+-   **🛡️ Secure Storage**: Your rule library is synced across devices using Firebase authentication.
+-   **📱 Mobile Friendly**: Check a rule on your phone right at the game table.
+-   **🔄 Cross-Game Comparison**: Quickly check how mechanics differ between multiple uploaded books.
 
-**Prerequisites:**  Node.js
+## 🚀 Tech Stack
 
+-   **Frontend**: React + Vite + TypeScript
+-   **Styling**: Tailwind CSS + Motion (Framer Motion)
+-   **Authentication**: Firebase Auth
+-   **Database**: Google Firestore
+-   **AI Engine**: Google Gemini API (@google/genai)
+-   **Icons**: Lucide React
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🛠️ Getting Started
+
+### Prerequisites
+
+-   Node.js (v18 or higher)
+-   A Google Gemini API Key
+-   A Firebase Project
+
+### Installation
+
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/K10hrn/Rulebook.git
+    cd Rulebook
+    ```
+
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+
+3.  **Environment Setup**:
+    Create a `.env` file in the root directory and add your keys:
+    ```env
+    GEMINI_API_KEY=your_key_here
+    VITE_FIREBASE_API_KEY=your_key
+    # ... other firebase config
+    ```
+
+4.  **Run Development Server**:
+    ```bash
+    npm run dev
+    ```
+
+## 🌐 Deployment (GitHub Pages)
+
+This project is configured to deploy automatically via GitHub Actions.
+
+1.  Push your changes to the `main` branch.
+2.  Enable **GitHub Actions** as the source in your Repository Settings -> Pages.
+3.  The workflow will build the project and host it at `https://K10hrn.github.io/Rulebook/`.
+
+## 🔒 Firebase Security
+
+Ensure your Firestore rules are deployed using the included `firestore.rules` file to protect user data. Remember to add `k10hrn.github.io` to your Authorized Domains in the Firebase Console.
+
+---
+Built with ❤️ for Board Gamers everywhere.
