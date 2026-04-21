@@ -65,6 +65,50 @@ import {
 } from './services/googleDriveService';
 import { rulebookService, Message } from './services/geminiService';
 
+interface GameIconProps {
+  iconUrl?: string;
+  wikipediaUrl?: string;
+  className?: string;
+}
+
+const GameIcon: React.FC<GameIconProps> = ({ iconUrl, wikipediaUrl, className = "w-8 h-8" }) => {
+  const [hasError, setHasError] = useState(false);
+
+  // Reset error if iconUrl changes
+  useEffect(() => {
+    setHasError(false);
+  }, [iconUrl]);
+
+  return (
+    <div className={`${className} bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30 rounded overflow-hidden relative transition-all`}>
+      {iconUrl && !hasError ? (
+        <img 
+          src={iconUrl} 
+          alt="" 
+          className="w-full h-full object-cover" 
+          referrerPolicy="no-referrer"
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <Book className="w-1/2 h-1/2 text-gold/60 group-hover:text-gold" />
+      )}
+      
+      {wikipediaUrl && (
+        <a 
+          href={wikipediaUrl} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          className="absolute bottom-0 right-0 p-1 bg-black/60 hover:bg-gold/80 transition-colors z-20 rounded-tl-lg"
+          title="Game Wiki"
+        >
+          <Globe className="w-2.5 h-2.5 text-white" />
+        </a>
+      )}
+    </div>
+  );
+};
+
 export default function App() {
   const [isActive, setIsActive] = useState(false);
   const [file, setFile] = useState<{ name: string; size: number } | null>(null);
@@ -563,25 +607,10 @@ export default function App() {
                             ? 'bg-gold/10 border-gold/40' 
                             : 'bg-white/[0.02] border-white/5 hover:border-gold/20 hover:bg-white/[0.04]'}`}
                       >
-                        <div className="w-8 h-8 rounded bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30 overflow-hidden relative">
-                          {game.wikipediaUrl && (
-                            <a 
-                              href={game.wikipediaUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              className="absolute inset-0 z-10 hover:bg-black/40 transition-colors flex items-center justify-center group/wiki"
-                              title="View Wikipedia"
-                            >
-                              <Globe className="w-3 h-3 text-white opacity-0 group-hover/wiki:opacity-100 transition-opacity" />
-                            </a>
-                          )}
-                          {game.iconUrl ? (
-                            <img src={game.iconUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <Book className="w-4 h-4 text-gold/60 group-hover:text-gold" />
-                          )}
-                        </div>
+                        <GameIcon 
+                          iconUrl={game.iconUrl} 
+                          wikipediaUrl={game.wikipediaUrl} 
+                        />
                         <div className="flex-1 min-w-0">
                           {editingId === game.id ? (
                             <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -819,25 +848,11 @@ export default function App() {
                         onClick={() => loadFromLibrary(game)}
                         className="glass p-5 rounded-[1.5rem] cursor-pointer hover:bg-gold/10 hover:border-gold/40 transition-all border border-white/5 relative group/item flex flex-col items-center text-center shadow-xl hover:shadow-gold/5"
                       >
-                        <div className="w-16 h-16 rounded-2xl bg-gold/5 border border-gold/10 flex items-center justify-center mb-4 transition-all group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3 shadow-inner overflow-hidden relative">
-                          {game.wikipediaUrl && (
-                            <a 
-                              href={game.wikipediaUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              className="absolute inset-0 z-10 hover:bg-black/40 transition-colors flex items-center justify-center group/wiki-main"
-                              title="View Wikipedia"
-                            >
-                              <Globe className="w-6 h-6 text-white opacity-0 group-hover/wiki-main:opacity-100 transition-opacity" />
-                            </a>
-                          )}
-                          {game.iconUrl ? (
-                            <img src={game.iconUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <Library className="w-8 h-8 text-gold/40 transition-all group-hover/item:text-gold group-hover/item:scale-110" />
-                          )}
-                        </div>
+                        <GameIcon 
+                          iconUrl={game.iconUrl} 
+                          wikipediaUrl={game.wikipediaUrl} 
+                          className="w-16 h-16 rounded-2xl group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3"
+                        />
                         
                         <div className="w-full flex-1 min-w-0">
                           <h4 className="text-sm font-serif text-white line-clamp-2 mb-2 min-h-[2.5rem] flex items-center justify-center leading-tight">{game.name}</h4>
