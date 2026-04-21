@@ -33,7 +33,11 @@ import {
   Link as LinkIcon,
   XCircle,
   Settings,
-  Sparkles
+  Sparkles,
+  Sun,
+  Moon,
+  CloudUpload,
+  RefreshCw
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -113,10 +117,21 @@ export default function App() {
   const [hasLocalGames, setHasLocalGames] = useState(false);
   const [isSyncingLocalToCloud, setIsSyncingLocalToCloud] = useState(false);
   const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    if (theme === 'light') {
+      document.documentElement.classList.add('light-theme');
+    } else {
+      document.documentElement.classList.remove('light-theme');
+    }
+  }, [theme]);
   const [manageName, setManageName] = useState('');
   const [manageLogo, setManageLogo] = useState('');
   const [isFindingLogo, setIsFindingLogo] = useState(false);
   const [findLogoError, setFindLogoError] = useState(false);
+  const [findLogoLimit, setFindLogoLimit] = useState(false);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -306,6 +321,7 @@ export default function App() {
     if (!manageName.trim() || isFindingLogo) return;
     setIsFindingLogo(true);
     setFindLogoError(false);
+    setFindLogoLimit(false);
     try {
       const url = await rulebookService.findLogoUrl(manageName.trim());
       if (url) {
@@ -314,10 +330,15 @@ export default function App() {
         setFindLogoError(true);
         setTimeout(() => setFindLogoError(false), 3000);
       }
-    } catch (err) {
-      console.error("Magic logo failed:", err);
-      setFindLogoError(true);
-      setTimeout(() => setFindLogoError(false), 3000);
+    } catch (err: any) {
+      if (err.message === 'RATE_LIMIT') {
+        setFindLogoLimit(true);
+        setTimeout(() => setFindLogoLimit(false), 5000);
+      } else {
+        console.error("Magic logo failed:", err);
+        setFindLogoError(true);
+        setTimeout(() => setFindLogoError(false), 3000);
+      }
     } finally {
       setIsFindingLogo(false);
     }
@@ -623,7 +644,30 @@ export default function App() {
                 <span className="flex items-center gap-2">
                   <Library className="w-3 h-3" /> Game Shelf
                 </span>
-                {isSyncing && <Loader2 className="w-3 h-3 animate-spin text-gold/50" />}
+                <div className="flex items-center gap-2">
+                  {driveToken && (
+                    <button 
+                      onClick={() => loadLibrary(driveToken)}
+                      disabled={isSyncing}
+                      className="p-1 px-1.5 text-text-muted hover:text-gold transition-colors flex items-center gap-1 group"
+                      title="Reload library from cloud"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform'}`} />
+                      <span className="text-[9px] uppercase tracking-tighter hidden sm:inline">Refresh</span>
+                    </button>
+                  )}
+                  {hasLocalGames && driveToken && !isSyncingLocalToCloud && (
+                    <button 
+                      onClick={syncLocalToDrive}
+                      className="text-[9px] px-2 py-1 bg-gold/20 hover:bg-gold/30 text-gold rounded border border-gold/30 flex items-center gap-1 transition-colors animate-pulse"
+                      title="Move local rulebooks to your Google Drive"
+                    >
+                      <CloudUpload className="w-3 h-3" /> Sync
+                    </button>
+                  )}
+                  {isSyncingLocalToCloud && <Loader2 className="w-3 h-3 animate-spin text-gold" />}
+                  {isSyncing && <Loader2 className="w-3 h-3 animate-spin text-gold/50" />}
+                </div>
               </div>
               
               <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
@@ -696,9 +740,18 @@ export default function App() {
                   </p>
                 </div>
               </div>
-              <button onClick={handleLogout} className="p-2 text-text-muted hover:text-red-400 transition-colors" title="Sign Out">
-                <LogOut className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} 
+                  className="p-2 text-text-muted hover:text-gold transition-colors" 
+                  title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                >
+                  {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
+                <button onClick={handleLogout} className="p-2 text-text-muted hover:text-red-400 transition-colors" title="Sign Out">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ) : (
             <button 
@@ -996,14 +1049,18 @@ export default function App() {
                       onClick={handleMagicLogo}
                       disabled={!manageName.trim() || isFindingLogo}
                       className={`px-4 border rounded-xl transition-all flex items-center justify-center disabled:opacity-30 ${
-                        findLogoError 
-                          ? 'bg-red-500/20 border-red-500/50 text-red-500' 
-                          : 'bg-gold/10 border-gold/40 text-text-gold hover:bg-gold/20'
+                        findLogoLimit 
+                          ? 'bg-orange-500/10 border-orange-500/40 text-orange-400' 
+                          : findLogoError 
+                            ? 'bg-red-500/20 border-red-500/50 text-red-500' 
+                            : 'bg-gold/10 border-gold/40 text-text-gold hover:bg-gold/20'
                       }`}
-                      title={findLogoError ? "Logo not found" : "Magic Auto-Logo"}
+                      title={findLogoLimit ? "Rate limit reached. Wait 60s." : findLogoError ? "Logo not found" : "Magic Auto-Logo"}
                     >
                       {isFindingLogo ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : findLogoLimit ? (
+                        <Clock className="w-4 h-4" />
                       ) : findLogoError ? (
                         <XCircle className="w-4 h-4" />
                       ) : (
@@ -1011,7 +1068,15 @@ export default function App() {
                       )}
                     </button>
                   </div>
-                  <p className="text-[9px] text-text-muted mt-2 pl-1">✨ Hit the sparkles to fetch the official logo from BoardGameGeek.</p>
+                  <p className="text-[9px] text-text-muted mt-2 pl-1">
+                    {findLogoLimit ? (
+                      <span className="text-orange-400 font-bold flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5" /> Rate limit reached. The Arbiter needs a 60-second break between magic searches.
+                      </span>
+                    ) : (
+                      "✨ Hit the sparkles to fetch the official logo from BoardGameGeek."
+                    )}
+                  </p>
                 </div>
 
                 <div className="pt-4 flex gap-3">

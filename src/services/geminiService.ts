@@ -151,10 +151,12 @@ export class RulebookService {
         }
       });
       const text = response.text?.trim() || "";
-      // Aggressively capture everything from https to the valid image extension
       const urlMatch = text.match(/https:\/\/cf\.geekdo-images\.com\/[^\s\"\'\>]+?\.(?:jpg|jpeg|png|webp|gif)/i);
       return urlMatch ? urlMatch[0] : null;
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.message?.includes("429") || err?.status === 429 || err?.message?.includes("RESOURCE_EXHAUSTED")) {
+        throw new Error("RATE_LIMIT");
+      }
       console.error("findLogoUrl failed:", err);
       return null;
     }
