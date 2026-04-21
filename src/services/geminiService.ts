@@ -94,6 +94,31 @@ export class RulebookService {
     return this.askQuestion(prompt, onUpdate);
   }
 
+  async generateSetupGuide(onUpdate?: (text: string) => void) {
+    const prompt = `Please generate a detailed 'How to Set Up' guide for this board game. 
+    Focus exclusively on:
+    1. Player counts and specific setup variations for different numbers of players.
+    2. Component placement (board, cards, tokens).
+    3. Hand and Deck preparation.
+    4. Determining the first player.
+    
+    Structure it as a clear checklist.`;
+    
+    return this.askQuestion(prompt, onUpdate);
+  }
+
+  async generateFAQ(onUpdate?: (text: string) => void) {
+    const prompt = `Based on the rulebook, what are the top 5-7 most frequently asked questions or common points of confusion? 
+    Please present these as Question & Answer pairs. 
+    Focus on:
+    - Edge cases
+    - Tricky timing issues
+    - Often misinterpreted wording
+    - "Can I do X?" type scenarios`;
+    
+    return this.askQuestion(prompt, onUpdate);
+  }
+
   getHistory() {
     return this.chatHistory;
   }

@@ -24,7 +24,11 @@ import {
   LogOut,
   UserCircle,
   Edit2,
-  Check
+  Check,
+  ListChecks,
+  HelpCircle,
+  MessageCircle,
+  ShieldCheck
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -312,6 +316,43 @@ export default function App() {
     }
   };
 
+  const handleGenerateSetupGuide = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setStreamingMessage('');
+    setMessages(prev => [...prev, { role: 'user', content: "Generating Setup Guide..." }]);
+    try {
+      await rulebookService.generateSetupGuide((chunk) => setStreamingMessage(chunk));
+      setMessages(prev => [...prev, { role: 'model', content: rulebookService.getHistory().slice(-1)[0].content }]);
+      setStreamingMessage('');
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'model', content: "I encountered an error while generating the setup guide. Please try again." }]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleGenerateFAQ = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setStreamingMessage('');
+    setMessages(prev => [...prev, { role: 'user', content: "Generating FAQ..." }]);
+    try {
+      await rulebookService.generateFAQ((chunk) => setStreamingMessage(chunk));
+      setMessages(prev => [...prev, { role: 'model', content: rulebookService.getHistory().slice(-1)[0].content }]);
+      setStreamingMessage('');
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'model', content: "I encountered an error while generating the FAQ. Please try again." }]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleFocusChat = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('chat-input')?.focus();
+  };
+
   const resetOracle = () => {
     setIsActive(false);
     setFile(null);
@@ -369,19 +410,50 @@ export default function App() {
                   </button>
                 </motion.div>
                 
-                <button
-                  onClick={handleGenerateQuickStart}
-                  disabled={isGenerating}
-                  className="w-full flex items-center justify-between p-3 border border-gold/30 rounded-xl hover:bg-gold/10 transition-all text-left group"
-                >
-                  <div className="flex items-center gap-2">
+                <div className="grid grid-cols-1 gap-2 pt-2">
+                  <button
+                    onClick={handleFocusChat}
+                    className="w-full flex items-center gap-3 p-3 border border-gold/20 rounded-xl hover:bg-gold/10 transition-all text-left group glass"
+                  >
+                    <div className="w-6 h-6 rounded-lg bg-gold/20 flex items-center justify-center">
+                      <MessageCircle className="w-4 h-4 text-text-gold" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-text-gold">Summon Arbiter Chat</span>
+                  </button>
+
+                  <button
+                    onClick={handleGenerateQuickStart}
+                    disabled={isGenerating}
+                    className="w-full flex items-center gap-3 p-3 border border-gold/20 rounded-xl hover:bg-gold/10 transition-all text-left group"
+                  >
                     <div className="w-6 h-6 rounded-lg bg-gold/20 flex items-center justify-center">
                       <ChevronRight className="w-4 h-4 text-text-gold" />
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-text-gold">Quick Start Guide</span>
-                  </div>
-                  {isGenerating && <Loader2 className="w-3 h-3 animate-spin text-text-gold" />}
-                </button>
+                  </button>
+
+                  <button
+                    onClick={handleGenerateSetupGuide}
+                    disabled={isGenerating}
+                    className="w-full flex items-center gap-3 p-3 border border-gold/20 rounded-xl hover:bg-gold/10 transition-all text-left group"
+                  >
+                    <div className="w-6 h-6 rounded-lg bg-gold/20 flex items-center justify-center">
+                      <ListChecks className="w-4 h-4 text-text-gold" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-text-gold">How to Set Up</span>
+                  </button>
+
+                  <button
+                    onClick={handleGenerateFAQ}
+                    disabled={isGenerating}
+                    className="w-full flex items-center gap-3 p-3 border border-gold/20 rounded-xl hover:bg-gold/10 transition-all text-left group"
+                  >
+                    <div className="w-6 h-6 rounded-lg bg-gold/20 flex items-center justify-center">
+                      <HelpCircle className="w-4 h-4 text-text-gold" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-text-gold">Rules FAQ</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-8 glass rounded-xl border border-dashed border-white/5">
@@ -713,6 +785,7 @@ export default function App() {
             <footer className="p-8 bg-gradient-to-t from-bg-base to-transparent">
               <div className="max-w-3xl mx-auto relative group">
                 <input
+                  id="chat-input"
                   type="text"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
