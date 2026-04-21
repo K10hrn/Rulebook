@@ -33,7 +33,8 @@ import {
   Link as LinkIcon,
   XCircle,
   Globe,
-  Settings
+  Settings,
+  Sparkles
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -72,10 +73,14 @@ interface GameIconProps {
   iconUrl?: string;
   wikipediaUrl?: string;
   className?: string;
+  name?: string;
 }
 
-const GameIcon: React.FC<GameIconProps> = ({ iconUrl, wikipediaUrl, className = "w-8 h-8" }) => {
+const GameIcon: React.FC<GameIconProps> = ({ iconUrl, wikipediaUrl, className = "w-8 h-8", name }) => {
   const [hasError, setHasError] = useState(false);
+
+  // Derive a fallback wikipedia URL if none provided
+  const derivedWikiUrl = wikipediaUrl || (name ? `https://en.wikipedia.org/wiki/${encodeURIComponent(name.trim().replace(/ /g, '_'))}_(board_game)` : undefined);
 
   // Reset error if iconUrl changes
   useEffect(() => {
@@ -96,9 +101,9 @@ const GameIcon: React.FC<GameIconProps> = ({ iconUrl, wikipediaUrl, className = 
         <Book className="w-1/2 h-1/2 text-gold/60 group-hover:text-gold" />
       )}
       
-      {wikipediaUrl && (
+      {derivedWikiUrl && (
         <a 
-          href={wikipediaUrl} 
+          href={derivedWikiUrl} 
           target="_blank" 
           rel="noopener noreferrer"
           onClick={e => e.stopPropagation()}
@@ -128,7 +133,7 @@ export default function App() {
   const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
   const [manageName, setManageName] = useState('');
   const [manageLogo, setManageLogo] = useState('');
-  const [manageWiki, setManageWiki] = useState('');
+  const [isFindingLogo, setIsFindingLogo] = useState(false);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -275,7 +280,19 @@ export default function App() {
     setManagingGame(game);
     setManageName(game.name);
     setManageLogo(game.iconUrl || '');
-    setManageWiki(game.wikipediaUrl || '');
+  };
+
+  const handleMagicLogo = async () => {
+    if (!manageName.trim() || isFindingLogo) return;
+    setIsFindingLogo(true);
+    try {
+      const url = await rulebookService.findLogoUrl(manageName.trim());
+      if (url) setManageLogo(url);
+    } catch (err) {
+      console.error("Magic logo failed:", err);
+    } finally {
+      setIsFindingLogo(false);
+    }
   };
 
   const handleSaveMetadata = async () => {
@@ -284,15 +301,13 @@ export default function App() {
     try {
       const updates = {
         name: manageName.trim(),
-        iconUrl: manageLogo.trim() || undefined,
-        wikipediaUrl: manageWiki.trim() || undefined
+        iconUrl: manageLogo.trim() || undefined
       };
 
       if (driveToken) {
         await updateFullMetadataInDrive(driveToken, managingGame.id, {
           name: updates.name,
-          iconUrl: updates.iconUrl,
-          wikiUrl: updates.wikipediaUrl
+          iconUrl: updates.iconUrl
         });
         loadLibrary(driveToken);
       } else {
@@ -368,8 +383,13 @@ export default function App() {
       
       setMessages(prev => [...prev, { role: 'model', content: rulebookService.getHistory().slice(-1)[0].content }]);
       setStreamingMessage('');
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'model', content: "The Arbiter is unable to provide a ruling at this time. Please try again." }]);
+    } catch (err: any) {
+      const isOverloaded = err?.message?.includes("503") || err?.stack?.includes("503");
+      const errorMessage = isOverloaded 
+        ? "The Arbiter is currently experiencing high demand and cannot provide a ruling right now. Please wait a moment and try again."
+        : "The Arbiter encountered an unexpected error while processing your request. Please check your connection and try again.";
+      
+      setMessages(prev => [...prev, { role: 'model', content: errorMessage }]);
     } finally {
       setIsGenerating(false);
     }
@@ -389,8 +409,12 @@ export default function App() {
       
       setMessages(prev => [...prev, { role: 'model', content: rulebookService.getHistory().slice(-1)[0].content }]);
       setStreamingMessage('');
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'model', content: "I encountered an error while generating the Quick Start guide. Please try again." }]);
+    } catch (err: any) {
+      const isOverloaded = err?.message?.includes("503") || err?.stack?.includes("503");
+      const errorMessage = isOverloaded 
+        ? "The Arbiter is currently under high demand. I couldn't generate the Quick Start guide—please try again in a few seconds."
+        : "I encountered an error while generating the Quick Start guide. Please try again.";
+      setMessages(prev => [...prev, { role: 'model', content: errorMessage }]);
     } finally {
       setIsGenerating(false);
     }
@@ -405,8 +429,12 @@ export default function App() {
       await rulebookService.generateSetupGuide((chunk) => setStreamingMessage(chunk));
       setMessages(prev => [...prev, { role: 'model', content: rulebookService.getHistory().slice(-1)[0].content }]);
       setStreamingMessage('');
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'model', content: "I encountered an error while generating the setup guide. Please try again." }]);
+    } catch (err: any) {
+      const isOverloaded = err?.message?.includes("503") || err?.stack?.includes("503");
+      const errorMessage = isOverloaded 
+        ? "The Arbiter is currently under high demand. I couldn't generate the setup guide—please try again in a few seconds."
+        : "I encountered an error while generating the setup guide. Please try again.";
+      setMessages(prev => [...prev, { role: 'model', content: errorMessage }]);
     } finally {
       setIsGenerating(false);
     }
@@ -421,8 +449,12 @@ export default function App() {
       await rulebookService.generateFAQ((chunk) => setStreamingMessage(chunk));
       setMessages(prev => [...prev, { role: 'model', content: rulebookService.getHistory().slice(-1)[0].content }]);
       setStreamingMessage('');
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'model', content: "I encountered an error while generating the FAQ. Please try again." }]);
+    } catch (err: any) {
+      const isOverloaded = err?.message?.includes("503") || err?.stack?.includes("503");
+      const errorMessage = isOverloaded 
+        ? "The Arbiter is currently under high demand. I couldn't generate the FAQ—please try again in a few seconds."
+        : "I encountered an error while generating the FAQ. Please try again.";
+      setMessages(prev => [...prev, { role: 'model', content: errorMessage }]);
     } finally {
       setIsGenerating(false);
     }
@@ -575,6 +607,7 @@ export default function App() {
                             : 'bg-white/[0.02] border-transparent hover:border-gold/20 hover:bg-white/[0.04]'}`}
                       >
                         <GameIcon 
+                          name={game.name}
                           iconUrl={game.iconUrl} 
                           wikipediaUrl={game.wikipediaUrl} 
                         />
@@ -742,6 +775,7 @@ export default function App() {
                         className="glass p-5 rounded-[1.5rem] cursor-pointer hover:bg-gold/10 hover:border-gold/40 transition-all border border-white/5 relative group/item flex flex-col items-center text-center shadow-xl hover:shadow-gold/5"
                       >
                         <GameIcon 
+                          name={game.name}
                           iconUrl={game.iconUrl} 
                           wikipediaUrl={game.wikipediaUrl} 
                           className="w-16 h-16 rounded-2xl group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3"
@@ -906,28 +940,26 @@ export default function App() {
 
                 <div>
                   <label className="text-[10px] uppercase tracking-widest text-text-muted mb-2 block font-bold">Logo URL</label>
-                  <div className="relative">
-                    <Image className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gold/50" />
-                    <input 
-                      value={manageLogo}
-                      onChange={e => setManageLogo(e.target.value)}
-                      className="w-full bg-bg-base border border-line rounded-xl pl-12 pr-4 py-3 text-sm focus:border-gold/50 outline-none transition-all"
-                      placeholder="https://example.com/logo.png"
-                    />
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Image className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gold/50" />
+                      <input 
+                        value={manageLogo}
+                        onChange={e => setManageLogo(e.target.value)}
+                        className="w-full bg-bg-base border border-line rounded-xl pl-12 pr-4 py-3 text-sm focus:border-gold/50 outline-none transition-all"
+                        placeholder="https://example.com/logo.png"
+                      />
+                    </div>
+                    <button 
+                      onClick={handleMagicLogo}
+                      disabled={!manageName.trim() || isFindingLogo}
+                      className="px-4 bg-gold/10 border border-gold/40 rounded-xl hover:bg-gold/20 transition-all text-text-gold flex items-center justify-center disabled:opacity-30"
+                      title="Magic Auto-Logo"
+                    >
+                      {isFindingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    </button>
                   </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase tracking-widest text-text-muted mb-2 block font-bold">Wikipedia URL</label>
-                  <div className="relative">
-                    <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gold/50" />
-                    <input 
-                      value={manageWiki}
-                      onChange={e => setManageWiki(e.target.value)}
-                      className="w-full bg-bg-base border border-line rounded-xl pl-12 pr-4 py-3 text-sm focus:border-gold/50 outline-none transition-all"
-                      placeholder="https://en.wikipedia.org/wiki/Game_Name"
-                    />
-                  </div>
+                  <p className="text-[9px] text-text-muted mt-2 pl-1">✨ Wikipedia links are handled automatically based on game name.</p>
                 </div>
 
                 <div className="pt-4 flex gap-3">

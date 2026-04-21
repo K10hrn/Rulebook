@@ -32,53 +32,61 @@ export class RulebookService {
       throw new Error("No rulebook uploaded.");
     }
 
-    try {
-      // First message includes the PDF
-      const isFirstMessage = this.chatHistory.length === 0;
-      
-      const contents = this.chatHistory.map(msg => ({
-        role: msg.role,
-        parts: [{ text: msg.content }]
-      }));
+    const MAX_RETRIES = 2;
+    let retryCount = 0;
 
-      const currentParts: any[] = [{ text: question }];
-      
-      // Always include PDF in the first turn's parts if we were using generateContent
-      // But for a chat, we can prepend the PDF to the message history or current message
-      // Actually, best practice with Gemini Flash for long context is to provide the doc once.
-      
-      const parts = isFirstMessage 
-        ? [
-            { inlineData: this.pdfData },
-            { text: `You are the lead Board Game Arbiter. I have provided the official rules. Your goal is to provide precise, final rulings based strictly on the text provided. If a rule is ambiguous, interpret it based on the game's intent as found in the text. If the information isn't there, state that the Arbiter cannot find a ruling in the provided text. \n\nRuling requested: ${question}` }
-          ]
-        : [{ text: question }];
+    const executeRequest = async (): Promise<string> => {
+      try {
+        const isFirstMessage = this.chatHistory.length === 0;
+        const contents = this.chatHistory.map(msg => ({
+          role: msg.role,
+          parts: [{ text: msg.content }]
+        }));
 
-      const stream = await this.ai.models.generateContentStream({
-        model: MODEL_NAME,
-        contents: [...contents, { role: "user" as const, parts }],
-        config: {
-          temperature: 0.7,
+        const parts = isFirstMessage 
+          ? [
+              { inlineData: this.pdfData },
+              { text: `You are the lead Board Game Arbiter. I have provided the official rules. Your goal is to provide precise, final rulings based strictly on the text provided. If a rule is ambiguous, interpret it based on the game's intent as found in the text. If the information isn't there, state that the Arbiter cannot find a ruling in the provided text. \n\nRuling requested: ${question}` }
+            ]
+          : [{ text: question }];
+
+        const stream = await this.ai.models.generateContentStream({
+          model: MODEL_NAME,
+          contents: [...contents, { role: "user" as const, parts }],
+          config: { temperature: 0.7 }
+        });
+
+        let fullResponse = "";
+        for await (const chunk of stream) {
+          const text = chunk.text;
+          if (text) {
+            fullResponse += text;
+            onUpdate?.(fullResponse);
+          }
         }
-      });
 
-      let fullResponse = "";
-      for await (const chunk of stream) {
-        const text = chunk.text;
-        if (text) {
-          fullResponse += text;
-          onUpdate?.(fullResponse);
+        this.chatHistory.push({ role: "user", content: question });
+        this.chatHistory.push({ role: "model" as const, content: fullResponse });
+        
+        return fullResponse;
+      } catch (error: any) {
+        // Check for transient 503 errors (High Demand)
+        const is503 = error?.message?.includes("503") || error?.stack?.includes("503");
+        
+        if (is503 && retryCount < MAX_RETRIES) {
+          retryCount++;
+          console.warn(`Arbiter is overloaded (503). Retrying... Attempt ${retryCount}`);
+          // Wait a second before retrying
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          return executeRequest();
         }
+
+        console.error("Gemini Error:", error);
+        throw error;
       }
+    };
 
-      this.chatHistory.push({ role: "user", content: question });
-      this.chatHistory.push({ role: "model" as const, content: fullResponse });
-      
-      return fullResponse;
-    } catch (error) {
-      console.error("Gemini Error:", error);
-      throw error;
-    }
+    return executeRequest();
   }
 
   async generateQuickStart(onUpdate?: (text: string) => void) {
@@ -117,6 +125,28 @@ export class RulebookService {
     - "Can I do X?" type scenarios`;
     
     return this.askQuestion(prompt, onUpdate);
+  }
+
+  /**
+   * Use Gemini's knowledge to find a stable logo URL for a board game.
+   * Prefer Wikipedia or official sources for stability.
+   */
+  async findLogoUrl(gameName: string): Promise<string | null> {
+    const prompt = `Find the direct URL for a high-quality logo or cover art for the board game "${gameName}". 
+    The URL should ideally be from Wikipedia (Wikimedia Commons) or a stable official source. 
+    Return ONLY the raw URL as a string. If you cannot find a certain link, return "null".`;
+    
+    // Use generateContent instead of askQuestion to keep history clean
+    try {
+      const response = await this.ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+      const text = response.text?.trim() || "";
+      return text.startsWith("http") ? text : null;
+    } catch {
+      return null;
+    }
   }
 
   getHistory() {
