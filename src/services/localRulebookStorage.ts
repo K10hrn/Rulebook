@@ -73,6 +73,17 @@ export async function updateRulebookWikipediaLocally(id: string, wikipediaUrl: s
   }
 }
 
+export async function updateRulebookMetadataLocally(id: string, updates: { name?: string, iconUrl?: string, wikipediaUrl?: string }) {
+  const key = `${STORAGE_KEY_PREFIX}${id}`;
+  const game = await get<LocalGame>(key);
+  if (game) {
+    if (updates.name) game.name = updates.name;
+    if (updates.iconUrl !== undefined) game.iconUrl = updates.iconUrl;
+    if (updates.wikipediaUrl !== undefined) game.wikipediaUrl = updates.wikipediaUrl;
+    await set(key, game);
+  }
+}
+
 export async function getBase64FromUint8Array(arr: Uint8Array): Promise<string> {
   const blob = new Blob([arr], { type: 'application/pdf' });
   return new Promise((resolve, reject) => {

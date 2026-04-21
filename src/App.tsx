@@ -32,7 +32,8 @@ import {
   Image,
   Link as LinkIcon,
   XCircle,
-  Globe
+  Globe,
+  Settings
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -51,6 +52,7 @@ import {
   renameRulebookLocally,
   updateRulebookIconLocally,
   updateRulebookWikipediaLocally,
+  updateRulebookMetadataLocally,
   getBase64FromUint8Array
 } from './services/localRulebookStorage';
 import { 
@@ -61,6 +63,7 @@ import {
   renameInDrive,
   updateIconInDrive,
   updateWikiUrlInDrive,
+  updateFullMetadataInDrive,
   DriveFileMetadata 
 } from './services/googleDriveService';
 import { rulebookService, Message } from './services/geminiService';
@@ -122,12 +125,10 @@ export default function App() {
   const [streamingMessage, setStreamingMessage] = useState('');
   const [driveToken, setDriveToken] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const [editingIconId, setEditingIconId] = useState<string | null>(null);
-  const [iconUrlValue, setIconUrlValue] = useState('');
-  const [editingWikiId, setEditingWikiId] = useState<string | null>(null);
-  const [wikiUrlValue, setWikiUrlValue] = useState('');
+  const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
+  const [manageName, setManageName] = useState('');
+  const [manageLogo, setManageLogo] = useState('');
+  const [manageWiki, setManageWiki] = useState('');
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -269,73 +270,39 @@ export default function App() {
     }
   };
 
-  const startEditing = (game: LocalGame, e: React.MouseEvent) => {
+  const openManageModal = (game: LocalGame, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditingId(game.id);
-    setEditValue(game.name);
+    setManagingGame(game);
+    setManageName(game.name);
+    setManageLogo(game.iconUrl || '');
+    setManageWiki(game.wikipediaUrl || '');
   };
 
-  const handleRename = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!editingId || !editValue.trim()) {
-      setEditingId(null);
-      return;
-    }
+  const handleSaveMetadata = async () => {
+    if (!managingGame) return;
 
     try {
+      const updates = {
+        name: manageName.trim(),
+        iconUrl: manageLogo.trim() || undefined,
+        wikipediaUrl: manageWiki.trim() || undefined
+      };
+
       if (driveToken) {
-        await renameInDrive(driveToken, editingId, editValue.trim());
+        await updateFullMetadataInDrive(driveToken, managingGame.id, {
+          name: updates.name,
+          iconUrl: updates.iconUrl,
+          wikiUrl: updates.wikipediaUrl
+        });
         loadLibrary(driveToken);
       } else {
-        await renameRulebookLocally(editingId, editValue.trim());
+        await updateRulebookMetadataLocally(managingGame.id, updates);
         loadLibrary();
       }
     } catch (err) {
-      console.error("Rename failed:", err);
+      console.error("Metdata update failed:", err);
     } finally {
-      setEditingId(null);
-    }
-  };
-
-  const handleUpdateIcon = async () => {
-    if (!editingIconId || !iconUrlValue.trim()) {
-      setEditingIconId(null);
-      return;
-    }
-
-    try {
-      if (driveToken) {
-        await updateIconInDrive(driveToken, editingIconId, iconUrlValue.trim());
-        loadLibrary(driveToken);
-      } else {
-        await updateRulebookIconLocally(editingIconId, iconUrlValue.trim());
-        loadLibrary();
-      }
-    } catch (err) {
-      console.error("Icon update failed:", err);
-    } finally {
-      setEditingIconId(null);
-    }
-  };
-
-  const handleUpdateWikiUrl = async () => {
-    if (!editingWikiId || !wikiUrlValue.trim()) {
-      setEditingWikiId(null);
-      return;
-    }
-
-    try {
-      if (driveToken) {
-        await updateWikiUrlInDrive(driveToken, editingWikiId, wikiUrlValue.trim());
-        loadLibrary(driveToken);
-      } else {
-        await updateRulebookWikipediaLocally(editingWikiId, wikiUrlValue.trim());
-        loadLibrary();
-      }
-    } catch (err) {
-      console.error("Wikipedia URL update failed:", err);
-    } finally {
-      setEditingWikiId(null);
+      setManagingGame(null);
     }
   };
 
@@ -601,104 +568,30 @@ export default function App() {
                     >
                       <motion.button
                         whileHover={{ x: 4 }}
-                        onClick={() => !isGenerating && editingId !== game.id && editingIconId !== game.id && editingWikiId !== game.id && loadFromLibrary(game)}
+                        onClick={() => !isGenerating && !managingGame && loadFromLibrary(game)}
                         className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 relative
                           ${file?.name === game.name 
                             ? 'bg-gold/10 border-gold/40' 
-                            : 'bg-white/[0.02] border-white/5 hover:border-gold/20 hover:bg-white/[0.04]'}`}
+                            : 'bg-white/[0.02] border-transparent hover:border-gold/20 hover:bg-white/[0.04]'}`}
                       >
                         <GameIcon 
                           iconUrl={game.iconUrl} 
                           wikipediaUrl={game.wikipediaUrl} 
                         />
                         <div className="flex-1 min-w-0">
-                          {editingId === game.id ? (
-                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                              <input 
-                                autoFocus
-                                value={editValue}
-                                onChange={e => setEditValue(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && handleRename()}
-                                className="bg-bg-base border border-gold/40 text-[11px] text-white px-1 py-0.5 rounded w-full outline-none"
-                              />
-                              <button onClick={() => handleRename()} className="text-emerald-500 hover:text-emerald-400">
-                                <Check className="w-3 h-3" />
-                              </button>
-                              <button onClick={() => setEditingId(null)} className="text-red-500 hover:text-red-400">
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : editingIconId === game.id ? (
-                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                              <div className="flex-1 relative">
-                                <LinkIcon className="absolute left-1 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-gold/50" />
-                                <input 
-                                  autoFocus
-                                  placeholder="Logo URL..."
-                                  value={iconUrlValue}
-                                  onChange={e => setIconUrlValue(e.target.value)}
-                                  onKeyDown={e => e.key === 'Enter' && handleUpdateIcon()}
-                                  className="bg-bg-base border border-gold/40 text-[9px] text-white pl-5 pr-1 py-0.5 rounded w-full outline-none"
-                                />
-                              </div>
-                              <button onClick={() => handleUpdateIcon()} className="text-emerald-500 hover:text-emerald-400">
-                                <Check className="w-3 h-3" />
-                              </button>
-                              <button onClick={() => setEditingIconId(null)} className="text-red-500 hover:text-red-400">
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : editingWikiId === game.id ? (
-                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                              <div className="flex-1 relative">
-                                <Globe className="absolute left-1 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-gold/50" />
-                                <input 
-                                  autoFocus
-                                  placeholder="Wikipedia URL..."
-                                  value={wikiUrlValue}
-                                  onChange={e => setWikiUrlValue(e.target.value)}
-                                  onKeyDown={e => e.key === 'Enter' && handleUpdateWikiUrl()}
-                                  className="bg-bg-base border border-gold/40 text-[9px] text-white pl-5 pr-1 py-0.5 rounded w-full outline-none"
-                                />
-                              </div>
-                              <button onClick={() => handleUpdateWikiUrl()} className="text-emerald-500 hover:text-emerald-400">
-                                <Check className="w-3 h-3" />
-                              </button>
-                              <button onClick={() => setEditingWikiId(null)} className="text-red-500 hover:text-red-400">
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="text-[11px] font-medium text-white truncate pr-16">{game.name}</div>
-                              <div className="text-[9px] text-text-muted">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
-                            </>
-                          )}
+                          <div className="text-[11px] font-medium text-white truncate pr-16">{game.name}</div>
+                          <div className="text-[9px] text-text-muted">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
                         </div>
                       </motion.button>
                       
-                      {editingId !== game.id && editingIconId !== game.id && editingWikiId !== game.id && (
+                      {!managingGame && (
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button 
-                            onClick={(e) => { e.stopPropagation(); setEditingWikiId(game.id); setWikiUrlValue(game.wikipediaUrl || ''); }}
+                            onClick={(e) => openManageModal(game, e)}
                             className="p-1.5 text-text-muted hover:text-gold transition-colors"
-                            title="Set Wiki URL"
+                            title="Manage Game"
                           >
-                            <Globe className="w-3 h-3" />
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setEditingIconId(game.id); setIconUrlValue(game.iconUrl || ''); }}
-                            className="p-1.5 text-text-muted hover:text-gold transition-colors"
-                            title="Set Logo URL"
-                          >
-                            <Image className="w-3 h-3" />
-                          </button>
-                          <button 
-                            onClick={(e) => startEditing(game, e)}
-                            className="p-1.5 text-text-muted hover:text-gold transition-colors"
-                            title="Rename"
-                          >
-                            <Edit2 className="w-3 h-3" />
+                            <Settings className="w-3 h-3" />
                           </button>
                           <button 
                             onClick={(e) => deleteFromLibrary(game.id, e)}
@@ -983,6 +876,79 @@ export default function App() {
           </div>
         )}
       </div>
+      {/* Manage Game Modal */}
+      <AnimatePresence>
+        {managingGame && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-md glass rounded-[2rem] p-8 border border-gold/20 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-xl font-serif text-text-gold">Manage rulebook details</h3>
+                <button onClick={() => setManagingGame(null)} className="p-2 text-text-muted hover:text-white transition-colors">
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-text-muted mb-2 block font-bold">Game Name</label>
+                  <input 
+                    value={manageName}
+                    onChange={e => setManageName(e.target.value)}
+                    className="w-full bg-bg-base border border-line rounded-xl px-4 py-3 text-sm focus:border-gold/50 outline-none transition-all"
+                    placeholder="Enter game title..."
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-text-muted mb-2 block font-bold">Logo URL</label>
+                  <div className="relative">
+                    <Image className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gold/50" />
+                    <input 
+                      value={manageLogo}
+                      onChange={e => setManageLogo(e.target.value)}
+                      className="w-full bg-bg-base border border-line rounded-xl pl-12 pr-4 py-3 text-sm focus:border-gold/50 outline-none transition-all"
+                      placeholder="https://example.com/logo.png"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-text-muted mb-2 block font-bold">Wikipedia URL</label>
+                  <div className="relative">
+                    <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gold/50" />
+                    <input 
+                      value={manageWiki}
+                      onChange={e => setManageWiki(e.target.value)}
+                      className="w-full bg-bg-base border border-line rounded-xl pl-12 pr-4 py-3 text-sm focus:border-gold/50 outline-none transition-all"
+                      placeholder="https://en.wikipedia.org/wiki/Game_Name"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button 
+                    onClick={() => setManagingGame(null)}
+                    className="flex-1 py-3 px-6 rounded-xl border border-line text-sm hover:bg-white/5 transition-all text-text-muted font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleSaveMetadata}
+                    className="flex-1 py-3 px-6 rounded-xl bg-gold text-bg-base text-sm hover:scale-[1.02] active:scale-[0.98] transition-all font-bold"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -165,6 +165,48 @@ export async function updateWikiUrlInDrive(accessToken: string, fileId: string, 
   return updateMetadataInDrive(accessToken, fileId, { wikiUrl: wikiUrl });
 }
 
+export async function updateFullMetadataInDrive(accessToken: string, fileId: string, updates: { name?: string, iconUrl?: string, wikiUrl?: string }): Promise<void> {
+  const body: any = {};
+  if (updates.name) body.name = updates.name;
+  
+  if (updates.iconUrl !== undefined || updates.wikiUrl !== undefined) {
+    // 1. Get existing description first to merge
+    const getResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=description`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    
+    let currentMetadata: any = {};
+    if (getResponse.ok) {
+      const data = await getResponse.json();
+      try {
+        currentMetadata = JSON.parse(data.description || '{}');
+      } catch {
+        if (data.description) currentMetadata = { iconUrl: data.description };
+      }
+    }
+
+    const mergedMeta = { ...currentMetadata };
+    if (updates.iconUrl !== undefined) mergedMeta.iconUrl = updates.iconUrl;
+    if (updates.wikiUrl !== undefined) mergedMeta.wikiUrl = updates.wikiUrl;
+    
+    body.description = JSON.stringify(mergedMeta);
+  }
+
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'PATCH',
+    headers: { 
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(`Drive Full Update Failed: ${err.error.message}`);
+  }
+}
+
 /**
  * Helper to find or create the hidden app folder.
  */
