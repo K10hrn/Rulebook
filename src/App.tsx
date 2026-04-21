@@ -34,19 +34,25 @@ import {
 } from 'firebase/auth';
 import { auth } from './firebase';
 import { 
-  CloudGame, 
-  fetchCloudLibrary, 
-  uploadRulebookToCloud, 
-  deleteRulebookFromCloud, 
-  downloadRulebookAsBase64,
-  testFirestoreConnection
-} from './services/rulebookStorage';
+  LocalGame, 
+  fetchLocalLibrary, 
+  saveRulebookLocally, 
+  deleteRulebookLocally, 
+  getBase64FromUint8Array
+} from './services/localRulebookStorage';
+import { 
+  fetchFromDrive, 
+  uploadToDrive, 
+  downloadFromDrive, 
+  deleteFromDrive,
+  DriveFileMetadata 
+} from './services/googleDriveService';
 import { rulebookService, Message } from './services/geminiService';
 
 export default function App() {
   const [isActive, setIsActive] = useState(false);
   const [file, setFile] = useState<{ name: string; size: number } | null>(null);
-  const [library, setLibrary] = useState<CloudGame[]>([]);
+  const [library, setLibrary] = useState<LocalGame[]>([]);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -54,39 +60,65 @@ export default function App() {
   const [inputValue, setInputValue] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    testFirestoreConnection().catch(console.error);
-    
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    // Sync logic: When user logs in/out, reload the library
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       setAuthLoading(false);
-      if (user) {
-        loadLibrary(user.uid);
-      } else {
-        setLibrary([]);
+      
+      if (!user) {
+        setDriveToken(null);
+        loadLibrary(); // Fallback to local
       }
     });
+
+    loadLibrary();
 
     return () => unsubscribe();
   }, []);
 
-  const loadLibrary = async (uid: string) => {
+  const loadLibrary = async (token?: string) => {
+    setIsSyncing(true);
     try {
-      const games = await fetchCloudLibrary(uid);
-      setLibrary(games);
+      if (token) {
+        const driveGames = await fetchFromDrive(token);
+        // Map Drive metadata to our UI format
+        const games: LocalGame[] = driveGames.map(f => ({
+          id: f.id,
+          name: f.name,
+          size: Number(f.size),
+          date: new Date(f.createdTime).getTime(),
+          data: new Uint8Array() // Data is fetched on-demand for Drive files
+        }));
+        setLibrary(games);
+      } else {
+        const games = await fetchLocalLibrary();
+        setLibrary(games);
+      }
     } catch (err) {
-      console.error("Failed to load cloud library:", err);
+      console.error("Failed to load library:", err);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/drive.file');
+    
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setDriveToken(credential.accessToken);
+        loadLibrary(credential.accessToken);
+      }
     } catch (err) {
       console.error("Login failed:", err);
     }
@@ -102,63 +134,80 @@ export default function App() {
   };
 
   const processFile = async (selectedFile: File) => {
-    if (!currentUser) {
-      alert("Please sign in to archive rulebooks to the cloud.");
-      return;
-    }
-
     setIsUploading(true);
     try {
-      const cloudGame = await uploadRulebookToCloud(currentUser.uid, selectedFile);
-      
-      // We still need the base64 for the current session's AI call
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64Raw = e.target?.result as string;
-        const base64Data = base64Raw.split(',')[1];
+      if (driveToken) {
+        // Cloud Sync: Upload to Drive
+        const driveFile = await uploadToDrive(driveToken, selectedFile);
         
+        // Prepare for current session (local read)
+        const arrayBuffer = await selectedFile.arrayBuffer();
+        const base64Data = await getBase64FromUint8Array(new Uint8Array(arrayBuffer));
         rulebookService.setPDF(base64Data);
-        setFile({ name: cloudGame.name, size: cloudGame.size });
+
+        setFile({ name: driveFile.name, size: Number(driveFile.size) });
         setIsActive(true);
         setMessages([
-          { role: 'model', content: `The Arbiter has reviewed **${cloudGame.name}** and archived it to your cloud library. I am ready to provide final rulings.` }
+          { role: 'model', content: `The Arbiter has synced **${driveFile.name}** to your Google Drive. It is now available on all your devices.` }
         ]);
-        loadLibrary(currentUser.uid);
-      };
-      reader.readAsDataURL(selectedFile);
+        
+        loadLibrary(driveToken);
+      } else {
+        // Local Only
+        const localGame = await saveRulebookLocally(selectedFile);
+        const base64Data = await getBase64FromUint8Array(localGame.data);
+        rulebookService.setPDF(base64Data);
+        
+        setFile({ name: localGame.name, size: localGame.size });
+        setIsActive(true);
+        setMessages([
+          { role: 'model', content: `The Arbiter has indexed **${localGame.name}** to your local library. (Note: Sign in to sync this game across devices).` }
+        ]);
+        loadLibrary();
+      }
     } catch (err) {
       console.error("Upload failed:", err);
-      alert("Failed to upload rulebook. Please try again.");
+      alert("Failed to process rulebook. Ensure the Drive API is enabled for your project.");
     } finally {
       setIsUploading(false);
     }
   };
 
-  const deleteFromLibrary = async (gameId: string, storagePath: string, e: React.MouseEvent) => {
+  const deleteFromLibrary = async (gameId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!currentUser) return;
-    
     try {
-      await deleteRulebookFromCloud(currentUser.uid, gameId, storagePath);
-      loadLibrary(currentUser.uid);
+      if (driveToken) {
+        await deleteFromDrive(driveToken, gameId);
+        loadLibrary(driveToken);
+      } else {
+        await deleteRulebookLocally(gameId);
+        loadLibrary();
+      }
     } catch (err) {
       console.error("Delete failed:", err);
     }
   };
 
-  const loadFromLibrary = async (game: CloudGame) => {
+  const loadFromLibrary = async (game: LocalGame) => {
     setIsUploading(true);
     try {
-      const base64 = await downloadRulebookAsBase64(game.storagePath);
+      let base64 = '';
+      if (driveToken && game.data.length === 0) {
+        // Fetch data from Drive if it's not local
+        base64 = await downloadFromDrive(driveToken, game.id);
+      } else {
+        base64 = await getBase64FromUint8Array(game.data);
+      }
+      
       rulebookService.setPDF(base64);
       setFile({ name: game.name, size: game.size });
       setIsActive(true);
       setMessages([
-        { role: 'model', content: `The Arbiter has recalled the rules for **${game.name}** from the cloud. I am ready to provide final rulings.` }
+        { role: 'model', content: `The Arbiter has recalled the rules for **${game.name}**. I am ready to provide final rulings.` }
       ]);
     } catch (err) {
-      console.error("Failed to load from cloud:", err);
-      alert("Could not retrieve file from cloud. Please check your connection.");
+      console.error("Failed to load rulebook:", err);
+      alert("Could not retrieve file. Please try again.");
     } finally {
       setIsUploading(false);
     }
@@ -301,8 +350,11 @@ export default function App() {
             )}
 
             <div className="mt-4 pt-6 border-t border-line/30 flex flex-col gap-4 overflow-hidden">
-              <div className="text-[10px] uppercase tracking-[0.2em] text-text-muted font-bold flex items-center gap-2">
-                <Library className="w-3 h-3" /> Game Shelf
+              <div className="text-[10px] uppercase tracking-[0.2em] text-text-muted font-bold flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Library className="w-3 h-3" /> Game Shelf
+                </span>
+                {isSyncing && <Loader2 className="w-3 h-3 animate-spin text-gold/50" />}
               </div>
               
               <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
@@ -347,7 +399,9 @@ export default function App() {
                 )}
                 <div>
                   <p className="text-[11px] font-bold text-white truncate max-w-[100px]">{currentUser.displayName || 'The Scribe'}</p>
-                  <p className="text-[9px] text-text-gold uppercase tracking-widest opacity-60">Session Active</p>
+                  <p className="text-[9px] text-text-gold uppercase tracking-widest opacity-60">
+                    {driveToken ? 'Cloud Sync On' : 'Session Active'}
+                  </p>
                 </div>
               </div>
               <button onClick={handleLogout} className="p-2 text-text-muted hover:text-red-400 transition-colors" title="Sign Out">
@@ -359,7 +413,7 @@ export default function App() {
               onClick={handleLogin}
               className="w-full flex items-center justify-center gap-2 py-3 px-4 glass rounded-xl text-[10px] uppercase tracking-widest font-bold text-gold hover:bg-gold/10 transition-all border border-gold/20"
             >
-              <LogIn className="w-4 h-4" /> Sign In to Sync
+              <LogIn className="w-4 h-4" /> Sign In
             </button>
           )}
           <div className="flex items-center gap-3 mt-6 pt-6 border-t border-line/30">
@@ -420,15 +474,9 @@ export default function App() {
                       </div>
                     </div>
                     <h2 className="text-4xl font-serif text-text-gold mb-3 gold-text-glow">Summon Arbiter</h2>
-                    {currentUser ? (
-                      <p className="text-text-muted max-w-sm mb-10 text-sm leading-relaxed">
-                        Index a new game rulebook into your cloud archive to begin your consultation.
-                      </p>
-                    ) : (
-                      <p className="text-amber-200/60 max-w-sm mb-10 text-xs leading-relaxed italic border border-amber-500/20 p-4 rounded-2xl bg-amber-500/5">
-                        Please Sign In to access the cloud archive and sync your games across all devices.
-                      </p>
-                    )}
+                    <p className="text-text-muted max-w-sm mb-10 text-sm leading-relaxed">
+                      Index a new game rulebook into your local library to begin your consultation.
+                    </p>
                     
                     <div className="flex flex-wrap justify-center gap-3">
                       {['Mechanics', 'Setup', 'Errata'].map(tag => (
@@ -443,7 +491,7 @@ export default function App() {
             </div>
 
             {/* Library / Pick a Game Section */}
-            {currentUser && library.length > 0 && (
+            {library.length > 0 && (
               <div className="w-full md:w-[28rem] flex flex-col gap-6">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex flex-col">
@@ -486,7 +534,7 @@ export default function App() {
                         </div>
 
                         <button
-                          onClick={(e) => deleteFromLibrary(game.id, game.storagePath, e)}
+                          onClick={(e) => deleteFromLibrary(game.id, e)}
                           className="absolute top-2 right-2 p-2 text-text-muted hover:text-red-400 opacity-0 group-hover/item:opacity-100 transition-all"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -501,11 +549,11 @@ export default function App() {
               </div>
             )}
             
-            {!currentUser && !authLoading && library.length === 0 && (
-               <div className="w-full md:w-80 flex flex-col justify-center items-center p-8 glass rounded-[2.5rem] border border-white/5 opacity-50 select-none">
-                  <LogIn className="w-10 h-10 text-gold mb-4 opacity-30" />
-                  <p className="text-[10px] uppercase tracking-widest text-text-muted text-center font-bold">Sign in to view your<br />archived rulesets</p>
-               </div>
+            {library.length === 0 && !isUploading && (
+              <div className="w-full md:w-80 flex flex-col justify-center items-center p-8 glass rounded-[2.5rem] border border-white/5 opacity-50 select-none">
+                <Book className="w-10 h-10 text-gold mb-4 opacity-30" />
+                <p className="text-[10px] uppercase tracking-widest text-text-muted text-center font-bold">Your library is empty.<br />Upload a PDF to start.</p>
+              </div>
             )}
           </div>
         ) : (
