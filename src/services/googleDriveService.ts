@@ -119,10 +119,10 @@ export async function renameInDrive(accessToken: string, fileId: string, newName
 }
 
 /**
- * Updates the icon URL and Wikipedia URL in Drive (stored in description).
- * We store them as a JSON string to keep things tidy.
+ * Updates the icon URL in Drive (stored in description).
+ * We store it as a JSON string to keep things tidy.
  */
-export async function updateMetadataInDrive(accessToken: string, fileId: string, updates: { iconUrl?: string, wikiUrl?: string }): Promise<void> {
+export async function updateMetadataInDrive(accessToken: string, fileId: string, updates: { iconUrl?: string }): Promise<void> {
   // 1. Get existing description first to merge
   const getResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=description`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -161,15 +161,11 @@ export async function updateIconInDrive(accessToken: string, fileId: string, ico
   return updateMetadataInDrive(accessToken, fileId, { iconUrl });
 }
 
-export async function updateWikiUrlInDrive(accessToken: string, fileId: string, wikiUrl: string): Promise<void> {
-  return updateMetadataInDrive(accessToken, fileId, { wikiUrl: wikiUrl });
-}
-
-export async function updateFullMetadataInDrive(accessToken: string, fileId: string, updates: { name?: string, iconUrl?: string, wikiUrl?: string }): Promise<void> {
+export async function updateFullMetadataInDrive(accessToken: string, fileId: string, updates: { name?: string, iconUrl?: string }): Promise<void> {
   const body: any = {};
   if (updates.name) body.name = updates.name;
   
-  if (updates.iconUrl !== undefined || updates.wikiUrl !== undefined) {
+  if (updates.iconUrl !== undefined) {
     // 1. Get existing description first to merge
     const getResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=description`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -187,7 +183,6 @@ export async function updateFullMetadataInDrive(accessToken: string, fileId: str
 
     const mergedMeta = { ...currentMetadata };
     if (updates.iconUrl !== undefined) mergedMeta.iconUrl = updates.iconUrl;
-    if (updates.wikiUrl !== undefined) mergedMeta.wikiUrl = updates.wikiUrl;
     
     body.description = JSON.stringify(mergedMeta);
   }

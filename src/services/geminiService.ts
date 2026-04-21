@@ -132,19 +132,29 @@ export class RulebookService {
    * Prefer Wikipedia or official sources for stability.
    */
   async findLogoUrl(gameName: string): Promise<string | null> {
-    const prompt = `Find the direct URL for a high-quality logo or cover art for the board game "${gameName}". 
-    The URL should ideally be from Wikipedia (Wikimedia Commons) or a stable official source. 
-    Return ONLY the raw URL as a string. If you cannot find a certain link, return "null".`;
+    const prompt = `Perform a Google Search to find the DIRECT image URL (the actual .jpg, .png or .webp file) for the box art or logo of the board game "${gameName}" from BoardGameGeek.
     
-    // Use generateContent instead of askQuestion to keep history clean
+    CRITICAL: YOU MUST FIND THE DIRECT CLOUD ASSET URL starting with "https://cf.geekdo-images.com/". 
+    DO NOT return BoardGameGeek page URLs (e.g., boardgamegeek.com/image/...).
+    
+    Return ONLY the raw naked URL. If you cannot find a direct image link that starts with "https://cf.geekdo-images.com/", return "null".`;
+    
+    // Use generateContent with googleSearch tool for real-time accuracy
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_NAME,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          tools: [{ googleSearch: {} }],
+          toolConfig: { includeServerSideToolInvocations: true }
+        }
       });
       const text = response.text?.trim() || "";
-      return text.startsWith("http") ? text : null;
-    } catch {
+      // Aggressively match the direct image URL from cloud asset
+      const urlMatch = text.match(/https:\/\/cf\.geekdo-images\.com\/[^\s)]+/);
+      return urlMatch ? urlMatch[0] : null;
+    } catch (err) {
+      console.error("findLogoUrl failed:", err);
       return null;
     }
   }

@@ -7,7 +7,6 @@ export interface LocalGame {
   date: number;
   data: Uint8Array; // The actual PDF data
   iconUrl?: string; // Optional custom icon
-  wikipediaUrl?: string; // Optional Wikipedia link
 }
 
 const STORAGE_KEY_PREFIX = 'rulebook_';
@@ -64,22 +63,12 @@ export async function updateRulebookIconLocally(id: string, iconUrl: string) {
   }
 }
 
-export async function updateRulebookWikipediaLocally(id: string, wikipediaUrl: string) {
-  const key = `${STORAGE_KEY_PREFIX}${id}`;
-  const game = await get<LocalGame>(key);
-  if (game) {
-    game.wikipediaUrl = wikipediaUrl;
-    await set(key, game);
-  }
-}
-
-export async function updateRulebookMetadataLocally(id: string, updates: { name?: string, iconUrl?: string, wikipediaUrl?: string }) {
+export async function updateRulebookMetadataLocally(id: string, updates: { name?: string, iconUrl?: string }) {
   const key = `${STORAGE_KEY_PREFIX}${id}`;
   const game = await get<LocalGame>(key);
   if (game) {
     if (updates.name) game.name = updates.name;
     if (updates.iconUrl !== undefined) game.iconUrl = updates.iconUrl;
-    if (updates.wikipediaUrl !== undefined) game.wikipediaUrl = updates.wikipediaUrl;
     await set(key, game);
   }
 }

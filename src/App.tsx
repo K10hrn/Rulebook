@@ -32,7 +32,6 @@ import {
   Image,
   Link as LinkIcon,
   XCircle,
-  Globe,
   Settings,
   Sparkles
 } from 'lucide-react';
@@ -52,7 +51,6 @@ import {
   deleteRulebookLocally, 
   renameRulebookLocally,
   updateRulebookIconLocally,
-  updateRulebookWikipediaLocally,
   updateRulebookMetadataLocally,
   getBase64FromUint8Array
 } from './services/localRulebookStorage';
@@ -63,7 +61,6 @@ import {
   deleteFromDrive,
   renameInDrive,
   updateIconInDrive,
-  updateWikiUrlInDrive,
   updateFullMetadataInDrive,
   DriveFileMetadata 
 } from './services/googleDriveService';
@@ -71,16 +68,12 @@ import { rulebookService, Message } from './services/geminiService';
 
 interface GameIconProps {
   iconUrl?: string;
-  wikipediaUrl?: string;
   className?: string;
   name?: string;
 }
 
-const GameIcon: React.FC<GameIconProps> = ({ iconUrl, wikipediaUrl, className = "w-8 h-8", name }) => {
+const GameIcon: React.FC<GameIconProps> = ({ iconUrl, className = "w-8 h-8" }) => {
   const [hasError, setHasError] = useState(false);
-
-  // Derive a fallback wikipedia URL if none provided
-  const derivedWikiUrl = wikipediaUrl || (name ? `https://en.wikipedia.org/wiki/${encodeURIComponent(name.trim().replace(/ /g, '_'))}_(board_game)` : undefined);
 
   // Reset error if iconUrl changes
   useEffect(() => {
@@ -99,19 +92,6 @@ const GameIcon: React.FC<GameIconProps> = ({ iconUrl, wikipediaUrl, className = 
         />
       ) : (
         <Book className="w-1/2 h-1/2 text-gold/60 group-hover:text-gold" />
-      )}
-      
-      {derivedWikiUrl && (
-        <a 
-          href={derivedWikiUrl} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          onClick={e => e.stopPropagation()}
-          className="absolute bottom-0 right-0 p-1 bg-black/60 hover:bg-gold/80 transition-colors z-20 rounded-tl-lg"
-          title="Game Wiki"
-        >
-          <Globe className="w-2.5 h-2.5 text-white" />
-        </a>
       )}
     </div>
   );
@@ -134,6 +114,7 @@ export default function App() {
   const [manageName, setManageName] = useState('');
   const [manageLogo, setManageLogo] = useState('');
   const [isFindingLogo, setIsFindingLogo] = useState(false);
+  const [findLogoError, setFindLogoError] = useState(false);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -163,12 +144,10 @@ export default function App() {
         // Map Drive metadata to our UI format
         const games: LocalGame[] = driveGames.map(f => {
           let iconUrl = f.description;
-          let wikipediaUrl = undefined;
           
           try {
             const meta = JSON.parse(f.description || '{}');
-            iconUrl = meta.iconUrl;
-            wikipediaUrl = meta.wikiUrl;
+            iconUrl = meta.iconUrl || iconUrl;
           } catch {
             // Keep iconUrl as raw description if parse fails
           }
@@ -179,8 +158,7 @@ export default function App() {
             size: Number(f.size),
             date: new Date(f.createdTime).getTime(),
             data: new Uint8Array(), // Data is fetched on-demand for Drive files
-            iconUrl,
-            wikipediaUrl
+            iconUrl
           };
         });
         setLibrary(games);
@@ -285,11 +263,19 @@ export default function App() {
   const handleMagicLogo = async () => {
     if (!manageName.trim() || isFindingLogo) return;
     setIsFindingLogo(true);
+    setFindLogoError(false);
     try {
       const url = await rulebookService.findLogoUrl(manageName.trim());
-      if (url) setManageLogo(url);
+      if (url) {
+        setManageLogo(url);
+      } else {
+        setFindLogoError(true);
+        setTimeout(() => setFindLogoError(false), 3000);
+      }
     } catch (err) {
       console.error("Magic logo failed:", err);
+      setFindLogoError(true);
+      setTimeout(() => setFindLogoError(false), 3000);
     } finally {
       setIsFindingLogo(false);
     }
@@ -490,7 +476,11 @@ export default function App() {
           </div>
           
           <button 
-            onClick={() => !isGenerating && fileInputRef.current?.click()}
+            onClick={() => {
+              if (isGenerating) return;
+              if (file) resetOracle();
+              fileInputRef.current?.click();
+            }}
             className="w-full glass py-3 rounded text-[10px] uppercase tracking-[0.2em] text-gold font-bold mb-8 hover:bg-gold/10 hover:border-gold/30 transition-all cursor-pointer gold-glow"
           >
             + Archive Rulebook
@@ -607,9 +597,7 @@ export default function App() {
                             : 'bg-white/[0.02] border-transparent hover:border-gold/20 hover:bg-white/[0.04]'}`}
                       >
                         <GameIcon 
-                          name={game.name}
                           iconUrl={game.iconUrl} 
-                          wikipediaUrl={game.wikipediaUrl} 
                         />
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-medium text-white truncate pr-16">{game.name}</div>
@@ -775,9 +763,7 @@ export default function App() {
                         className="glass p-5 rounded-[1.5rem] cursor-pointer hover:bg-gold/10 hover:border-gold/40 transition-all border border-white/5 relative group/item flex flex-col items-center text-center shadow-xl hover:shadow-gold/5"
                       >
                         <GameIcon 
-                          name={game.name}
                           iconUrl={game.iconUrl} 
-                          wikipediaUrl={game.wikipediaUrl} 
                           className="w-16 h-16 rounded-2xl group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3"
                         />
                         
@@ -928,6 +914,17 @@ export default function App() {
               </div>
 
               <div className="space-y-6">
+                <div className="flex items-center gap-6 p-4 glass rounded-2xl border border-white/5 bg-white/[0.02]">
+                  <GameIcon 
+                    iconUrl={manageLogo} 
+                    className="w-20 h-20 rounded-2xl shadow-2xl border-white/10"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] uppercase tracking-widest text-text-muted mb-1 font-bold">Preview</div>
+                    <div className="text-sm font-serif text-white truncate">{manageName || "Game Title"}</div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-[10px] uppercase tracking-widest text-text-muted mb-2 block font-bold">Game Name</label>
                   <input 
@@ -953,13 +950,23 @@ export default function App() {
                     <button 
                       onClick={handleMagicLogo}
                       disabled={!manageName.trim() || isFindingLogo}
-                      className="px-4 bg-gold/10 border border-gold/40 rounded-xl hover:bg-gold/20 transition-all text-text-gold flex items-center justify-center disabled:opacity-30"
-                      title="Magic Auto-Logo"
+                      className={`px-4 border rounded-xl transition-all flex items-center justify-center disabled:opacity-30 ${
+                        findLogoError 
+                          ? 'bg-red-500/20 border-red-500/50 text-red-500' 
+                          : 'bg-gold/10 border-gold/40 text-text-gold hover:bg-gold/20'
+                      }`}
+                      title={findLogoError ? "Logo not found" : "Magic Auto-Logo"}
                     >
-                      {isFindingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      {isFindingLogo ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : findLogoError ? (
+                        <XCircle className="w-4 h-4" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
-                  <p className="text-[9px] text-text-muted mt-2 pl-1">✨ Wikipedia links are handled automatically based on game name.</p>
+                  <p className="text-[9px] text-text-muted mt-2 pl-1">✨ Hit the sparkles to fetch the official logo from BoardGameGeek.</p>
                 </div>
 
                 <div className="pt-4 flex gap-3">
