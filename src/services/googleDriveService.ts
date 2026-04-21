@@ -4,7 +4,7 @@
  */
 
 const DRIVE_MIME_TYPE = 'application/pdf';
-const FOLDER_NAME = 'RuleBook_Arbiter_Library';
+const FOLDER_NAME = 'RuleBook Rules';
 
 export interface DriveFileMetadata {
   id: string;
