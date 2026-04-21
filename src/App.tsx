@@ -31,7 +31,8 @@ import {
   ShieldCheck,
   Image,
   Link as LinkIcon,
-  XCircle
+  XCircle,
+  Globe
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -49,6 +50,7 @@ import {
   deleteRulebookLocally, 
   renameRulebookLocally,
   updateRulebookIconLocally,
+  updateRulebookWikipediaLocally,
   getBase64FromUint8Array
 } from './services/localRulebookStorage';
 import { 
@@ -58,6 +60,7 @@ import {
   deleteFromDrive,
   renameInDrive,
   updateIconInDrive,
+  updateWikiUrlInDrive,
   DriveFileMetadata 
 } from './services/googleDriveService';
 import { rulebookService, Message } from './services/geminiService';
@@ -79,6 +82,8 @@ export default function App() {
   const [editValue, setEditValue] = useState('');
   const [editingIconId, setEditingIconId] = useState<string | null>(null);
   const [iconUrlValue, setIconUrlValue] = useState('');
+  const [editingWikiId, setEditingWikiId] = useState<string | null>(null);
+  const [wikiUrlValue, setWikiUrlValue] = useState('');
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -106,14 +111,28 @@ export default function App() {
       if (token) {
         const driveGames = await fetchFromDrive(token);
         // Map Drive metadata to our UI format
-        const games: LocalGame[] = driveGames.map(f => ({
-          id: f.id,
-          name: f.name,
-          size: Number(f.size),
-          date: new Date(f.createdTime).getTime(),
-          data: new Uint8Array(), // Data is fetched on-demand for Drive files
-          iconUrl: f.description
-        }));
+        const games: LocalGame[] = driveGames.map(f => {
+          let iconUrl = f.description;
+          let wikipediaUrl = undefined;
+          
+          try {
+            const meta = JSON.parse(f.description || '{}');
+            iconUrl = meta.iconUrl;
+            wikipediaUrl = meta.wikiUrl;
+          } catch {
+            // Keep iconUrl as raw description if parse fails
+          }
+
+          return {
+            id: f.id,
+            name: f.name,
+            size: Number(f.size),
+            date: new Date(f.createdTime).getTime(),
+            data: new Uint8Array(), // Data is fetched on-demand for Drive files
+            iconUrl,
+            wikipediaUrl
+          };
+        });
         setLibrary(games);
       } else {
         const games = await fetchLocalLibrary();
@@ -252,6 +271,27 @@ export default function App() {
       console.error("Icon update failed:", err);
     } finally {
       setEditingIconId(null);
+    }
+  };
+
+  const handleUpdateWikiUrl = async () => {
+    if (!editingWikiId || !wikiUrlValue.trim()) {
+      setEditingWikiId(null);
+      return;
+    }
+
+    try {
+      if (driveToken) {
+        await updateWikiUrlInDrive(driveToken, editingWikiId, wikiUrlValue.trim());
+        loadLibrary(driveToken);
+      } else {
+        await updateRulebookWikipediaLocally(editingWikiId, wikiUrlValue.trim());
+        loadLibrary();
+      }
+    } catch (err) {
+      console.error("Wikipedia URL update failed:", err);
+    } finally {
+      setEditingWikiId(null);
     }
   };
 
@@ -517,13 +557,25 @@ export default function App() {
                     >
                       <motion.button
                         whileHover={{ x: 4 }}
-                        onClick={() => !isGenerating && editingId !== game.id && editingIconId !== game.id && loadFromLibrary(game)}
+                        onClick={() => !isGenerating && editingId !== game.id && editingIconId !== game.id && editingWikiId !== game.id && loadFromLibrary(game)}
                         className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 relative
                           ${file?.name === game.name 
                             ? 'bg-gold/10 border-gold/40' 
                             : 'bg-white/[0.02] border-white/5 hover:border-gold/20 hover:bg-white/[0.04]'}`}
                       >
-                        <div className="w-8 h-8 rounded bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30 overflow-hidden">
+                        <div className="w-8 h-8 rounded bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30 overflow-hidden relative">
+                          {game.wikipediaUrl && (
+                            <a 
+                              href={game.wikipediaUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="absolute inset-0 z-10 hover:bg-black/40 transition-colors flex items-center justify-center group/wiki"
+                              title="View Wikipedia"
+                            >
+                              <Globe className="w-3 h-3 text-white opacity-0 group-hover/wiki:opacity-100 transition-opacity" />
+                            </a>
+                          )}
                           {game.iconUrl ? (
                             <img src={game.iconUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
@@ -567,6 +619,26 @@ export default function App() {
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
+                          ) : editingWikiId === game.id ? (
+                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                              <div className="flex-1 relative">
+                                <Globe className="absolute left-1 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-gold/50" />
+                                <input 
+                                  autoFocus
+                                  placeholder="Wikipedia URL..."
+                                  value={wikiUrlValue}
+                                  onChange={e => setWikiUrlValue(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && handleUpdateWikiUrl()}
+                                  className="bg-bg-base border border-gold/40 text-[9px] text-white pl-5 pr-1 py-0.5 rounded w-full outline-none"
+                                />
+                              </div>
+                              <button onClick={() => handleUpdateWikiUrl()} className="text-emerald-500 hover:text-emerald-400">
+                                <Check className="w-3 h-3" />
+                              </button>
+                              <button onClick={() => setEditingWikiId(null)} className="text-red-500 hover:text-red-400">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
                           ) : (
                             <>
                               <div className="text-[11px] font-medium text-white truncate pr-16">{game.name}</div>
@@ -576,8 +648,15 @@ export default function App() {
                         </div>
                       </motion.button>
                       
-                      {editingId !== game.id && editingIconId !== game.id && (
+                      {editingId !== game.id && editingIconId !== game.id && editingWikiId !== game.id && (
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setEditingWikiId(game.id); setWikiUrlValue(game.wikipediaUrl || ''); }}
+                            className="p-1.5 text-text-muted hover:text-gold transition-colors"
+                            title="Set Wiki URL"
+                          >
+                            <Globe className="w-3 h-3" />
+                          </button>
                           <button 
                             onClick={(e) => { e.stopPropagation(); setEditingIconId(game.id); setIconUrlValue(game.iconUrl || ''); }}
                             className="p-1.5 text-text-muted hover:text-gold transition-colors"
@@ -740,7 +819,19 @@ export default function App() {
                         onClick={() => loadFromLibrary(game)}
                         className="glass p-5 rounded-[1.5rem] cursor-pointer hover:bg-gold/10 hover:border-gold/40 transition-all border border-white/5 relative group/item flex flex-col items-center text-center shadow-xl hover:shadow-gold/5"
                       >
-                        <div className="w-16 h-16 rounded-2xl bg-gold/5 border border-gold/10 flex items-center justify-center mb-4 transition-all group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3 shadow-inner overflow-hidden">
+                        <div className="w-16 h-16 rounded-2xl bg-gold/5 border border-gold/10 flex items-center justify-center mb-4 transition-all group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3 shadow-inner overflow-hidden relative">
+                          {game.wikipediaUrl && (
+                            <a 
+                              href={game.wikipediaUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="absolute inset-0 z-10 hover:bg-black/40 transition-colors flex items-center justify-center group/wiki-main"
+                              title="View Wikipedia"
+                            >
+                              <Globe className="w-6 h-6 text-white opacity-0 group-hover/wiki-main:opacity-100 transition-opacity" />
+                            </a>
+                          )}
                           {game.iconUrl ? (
                             <img src={game.iconUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
