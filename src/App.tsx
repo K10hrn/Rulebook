@@ -422,9 +422,17 @@ export default function App() {
               <LogIn className="w-4 h-4" /> Sign In
             </button>
           )}
-          <div className="flex items-center gap-3 mt-6 pt-6 border-t border-line/30">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-            <p className="text-[10px] text-text-muted font-medium tracking-tight">The Arbiter is Online</p>
+          <div className="flex items-center justify-between mt-6 pt-6 border-t border-line/30">
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+              <p className="text-[10px] text-text-muted font-medium tracking-tight">The Arbiter is Online</p>
+            </div>
+            <div className="flex flex-col items-end opacity-30 select-none">
+              <p className="text-[8px] font-mono tracking-tighter">v1.0.4-keysync</p>
+              {process.env.GEMINI_API_KEY && (
+                <p className="text-[7px] font-mono">key: {process.env.GEMINI_API_KEY.length}ch</p>
+              )}
+            </div>
           </div>
         </div>
       </div>
