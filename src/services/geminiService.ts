@@ -13,7 +13,11 @@ export class RulebookService {
   private chatHistory: Message[] = [];
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("GEMINI_API_KEY is missing from the environment. AI features will not work until this is configured.");
+    }
+    this.ai = new GoogleGenAI({ apiKey: apiKey || "" });
   }
 
   setPDF(base64Data: string, mimeType: string = "application/pdf") {

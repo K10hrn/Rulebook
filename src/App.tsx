@@ -238,6 +238,12 @@ export default function App() {
     setStreamingMessage('');
 
     try {
+      if (!process.env.GEMINI_API_KEY) {
+        setMessages(prev => [...prev, { role: 'model', content: "⚠️ **Arbiter Key Missing**: The Gemini API key hasn't been configured for this deployment. Please set the `GEMINI_API_KEY` secret in your GitHub repository and re-deploy." }]);
+        setIsGenerating(false);
+        return;
+      }
+
       await rulebookService.askQuestion(userMsg, (chunk) => {
         setStreamingMessage(chunk);
       });
