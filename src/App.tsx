@@ -110,6 +110,8 @@ export default function App() {
   const [streamingMessage, setStreamingMessage] = useState('');
   const [driveToken, setDriveToken] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [hasLocalGames, setHasLocalGames] = useState(false);
+  const [isSyncingLocalToCloud, setIsSyncingLocalToCloud] = useState(false);
   const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
   const [manageName, setManageName] = useState('');
   const [manageLogo, setManageLogo] = useState('');
@@ -139,6 +141,10 @@ export default function App() {
   const loadLibrary = async (token?: string) => {
     setIsSyncing(true);
     try {
+      // Always check for local games to see if we need to offer a sync
+      const localGames = await fetchLocalLibrary();
+      setHasLocalGames(localGames.length > 0);
+
       if (token) {
         const driveGames = await fetchFromDrive(token);
         // Map Drive metadata to our UI format
@@ -163,13 +169,48 @@ export default function App() {
         });
         setLibrary(games);
       } else {
-        const games = await fetchLocalLibrary();
-        setLibrary(games);
+        setLibrary(localGames);
       }
     } catch (err) {
       console.error("Failed to load library:", err);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const syncLocalToDrive = async () => {
+    if (!driveToken) return;
+    setIsSyncingLocalToCloud(true);
+    try {
+      const localGames = await fetchLocalLibrary();
+      for (const game of localGames) {
+        // Create a File-like object from the local data
+        const blob = new Blob([game.data], { type: 'application/pdf' });
+        const fileObj = new File([blob], game.name, { type: 'application/pdf' });
+        
+        // 1. Upload the file
+        const driveFile = await uploadToDrive(driveToken, fileObj);
+        
+        // 2. Upload metadata (icon)
+        if (game.iconUrl) {
+          await updateIconInDrive(driveToken, driveFile.id, game.iconUrl);
+        }
+        
+        // 3. Delete locally after successful cloud push
+        await deleteRulebookLocally(game.id);
+      }
+      
+      // Refresh library
+      await loadLibrary(driveToken);
+      setMessages(prev => [
+        ...prev,
+        { role: 'model', content: `✨ **Migration Complete!** I've synced ${localGames.length} rulebooks from your local storage to your Google Drive.` }
+      ]);
+    } catch (err) {
+      console.error("Sync failed:", err);
+      alert("Cloud Sync failed. Please ensure you have sufficient Drive space.");
+    } finally {
+      setIsSyncingLocalToCloud(false);
     }
   };
 
@@ -181,8 +222,9 @@ export default function App() {
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
-        setDriveToken(credential.accessToken);
-        loadLibrary(credential.accessToken);
+        const token = credential.accessToken;
+        setDriveToken(token);
+        await loadLibrary(token);
       }
     } catch (err) {
       console.error("Login failed:", err);
@@ -284,26 +326,29 @@ export default function App() {
   const handleSaveMetadata = async () => {
     if (!managingGame) return;
 
-    try {
-      const updates = {
-        name: manageName.trim(),
-        iconUrl: manageLogo.trim() || undefined
-      };
+    // Background the actual update but close modal instantly
+    const updates = {
+      name: manageName.trim(),
+      iconUrl: manageLogo.trim() || undefined
+    };
+    const gameId = managingGame.id;
+    const currentDriveToken = driveToken;
 
-      if (driveToken) {
-        await updateFullMetadataInDrive(driveToken, managingGame.id, {
+    setManagingGame(null); // Close modal immediately
+
+    try {
+      if (currentDriveToken) {
+        await updateFullMetadataInDrive(currentDriveToken, gameId, {
           name: updates.name,
           iconUrl: updates.iconUrl
         });
-        loadLibrary(driveToken);
+        loadLibrary(currentDriveToken);
       } else {
-        await updateRulebookMetadataLocally(managingGame.id, updates);
+        await updateRulebookMetadataLocally(gameId, updates);
         loadLibrary();
       }
     } catch (err) {
-      console.error("Metdata update failed:", err);
-    } finally {
-      setManagingGame(null);
+      console.error("Background metadata update failed:", err);
     }
   };
 
@@ -747,7 +792,7 @@ export default function App() {
                     </h3>
                     <p className="text-[10px] text-text-muted mt-1">Select a title to consult the Arbiter</p>
                   </div>
-                  <span className="px-2 py-1 rounded bg-gold/10 border border-gold/20 text-[9px] text-gold font-bold">{library.length} RULES</span>
+                  <span className="px-2 py-1 rounded bg-gold/10 border border-gold/20 text-[9px] text-gold font-bold">{library.length} RULEBOOKS</span>
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 overflow-y-auto pr-2 max-h-[600px] custom-scrollbar pb-10">

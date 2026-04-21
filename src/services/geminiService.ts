@@ -132,14 +132,15 @@ export class RulebookService {
    * Prefer Wikipedia or official sources for stability.
    */
   async findLogoUrl(gameName: string): Promise<string | null> {
-    const prompt = `Perform a Google Search to find the DIRECT image URL (the actual .jpg, .png or .webp file) for the box art or logo of the board game "${gameName}" from BoardGameGeek.
+    const prompt = `Search for the high-resolution box art for the board game "${gameName}" from BoardGameGeek (BGG).
     
-    CRITICAL: YOU MUST FIND THE DIRECT CLOUD ASSET URL starting with "https://cf.geekdo-images.com/". 
-    DO NOT return BoardGameGeek page URLs (e.g., boardgamegeek.com/image/...).
+    CRITICAL: YOU MUST FIND THE DIRECT CLOUD ASSET URL (the actual .jpg or .png file) hosted on "cf.geekdo-images.com".
+    BGG image hashes are VERY LONG (often 50+ characters). Do NOT return truncated URLs.
     
-    Return ONLY the raw naked URL. If you cannot find a direct image link that starts with "https://cf.geekdo-images.com/", return "null".`;
+    Correct Example: https://cf.geekdo-images.com/yLZJCVLIIeb9vR_7V0OBAA__itemrep/img/S5p6P6S2uUnOlv5YF9oK_0qG74o=/fit-in/400x400/filters:strip_icc()/pic4458123.jpg
     
-    // Use generateContent with googleSearch tool for real-time accuracy
+    Return ONLY the raw URL as a plain string. If no direct link is found, return "null".`;
+    
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_NAME,
@@ -150,8 +151,8 @@ export class RulebookService {
         }
       });
       const text = response.text?.trim() || "";
-      // Aggressively match the direct image URL from cloud asset
-      const urlMatch = text.match(/https:\/\/cf\.geekdo-images\.com\/[^\s)]+/);
+      // Aggressively capture everything from https to the valid image extension
+      const urlMatch = text.match(/https:\/\/cf\.geekdo-images\.com\/[^\s\"\'\>]+?\.(?:jpg|jpeg|png|webp|gif)/i);
       return urlMatch ? urlMatch[0] : null;
     } catch (err) {
       console.error("findLogoUrl failed:", err);
