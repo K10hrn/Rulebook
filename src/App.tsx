@@ -30,7 +30,8 @@ import {
   MessageCircle,
   ShieldCheck,
   Image,
-  Link as LinkIcon
+  Link as LinkIcon,
+  XCircle
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -431,7 +432,7 @@ export default function App() {
                   </div>
                   <button 
                     onClick={resetOracle}
-                    className="p-1 text-text-muted hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                    className="p-1 text-text-muted hover:text-red-500 transition-colors"
                     title="Close current game"
                   >
                     <X className="w-4 h-4" />
@@ -480,6 +481,16 @@ export default function App() {
                       <HelpCircle className="w-4 h-4 text-text-gold" />
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-text-gold">Rules FAQ</span>
+                  </button>
+
+                  <button
+                    onClick={resetOracle}
+                    className="w-full flex items-center gap-3 p-3 border border-red-500/20 rounded-xl hover:bg-red-500/10 transition-all text-left group mt-2"
+                  >
+                    <div className="w-6 h-6 rounded-lg bg-red-500/20 flex items-center justify-center">
+                      <XCircle className="w-4 h-4 text-red-400" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-red-400">Close Active Game</span>
                   </button>
                 </div>
               </div>
