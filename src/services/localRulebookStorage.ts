@@ -44,6 +44,15 @@ export async function deleteRulebookLocally(id: string) {
   await del(`${STORAGE_KEY_PREFIX}${id}`);
 }
 
+export async function renameRulebookLocally(id: string, newName: string) {
+  const key = `${STORAGE_KEY_PREFIX}${id}`;
+  const game = await get<LocalGame>(key);
+  if (game) {
+    game.name = newName;
+    await set(key, game);
+  }
+}
+
 export async function getBase64FromUint8Array(arr: Uint8Array): Promise<string> {
   const blob = new Blob([arr], { type: 'application/pdf' });
   return new Promise((resolve, reject) => {

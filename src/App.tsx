@@ -22,7 +22,9 @@ import {
   Clock,
   LogIn,
   LogOut,
-  UserCircle
+  UserCircle,
+  Edit2,
+  Check
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -38,6 +40,7 @@ import {
   fetchLocalLibrary, 
   saveRulebookLocally, 
   deleteRulebookLocally, 
+  renameRulebookLocally,
   getBase64FromUint8Array
 } from './services/localRulebookStorage';
 import { 
@@ -45,6 +48,7 @@ import {
   uploadToDrive, 
   downloadFromDrive, 
   deleteFromDrive,
+  renameInDrive,
   DriveFileMetadata 
 } from './services/googleDriveService';
 import { rulebookService, Message } from './services/geminiService';
@@ -62,6 +66,8 @@ export default function App() {
   const [streamingMessage, setStreamingMessage] = useState('');
   const [driveToken, setDriveToken] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -185,6 +191,34 @@ export default function App() {
       }
     } catch (err) {
       console.error("Delete failed:", err);
+    }
+  };
+
+  const startEditing = (game: LocalGame, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingId(game.id);
+    setEditValue(game.name);
+  };
+
+  const handleRename = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingId || !editValue.trim()) {
+      setEditingId(null);
+      return;
+    }
+
+    try {
+      if (driveToken) {
+        await renameInDrive(driveToken, editingId, editValue.trim());
+        loadLibrary(driveToken);
+      } else {
+        await renameRulebookLocally(editingId, editValue.trim());
+        loadLibrary();
+      }
+    } catch (err) {
+      console.error("Rename failed:", err);
+    } finally {
+      setEditingId(null);
     }
   };
 
@@ -366,23 +400,66 @@ export default function App() {
               <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
                 {library.length > 0 ? (
                   library.map((game) => (
-                    <motion.button
+                    <motion.div
                       key={game.id}
-                      whileHover={{ x: 4 }}
-                      onClick={() => !isGenerating && loadFromLibrary(game)}
-                      className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 group relative
-                        ${file?.name === game.name 
-                          ? 'bg-gold/10 border-gold/40' 
-                          : 'bg-white/[0.02] border-white/5 hover:border-gold/20 hover:bg-white/[0.04]'}`}
+                      className="relative group"
                     >
-                      <div className="w-8 h-8 rounded bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30">
-                        <Book className="w-4 h-4 text-gold/60 group-hover:text-gold" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-medium text-white truncate">{game.name}</div>
-                        <div className="text-[9px] text-text-muted">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
-                      </div>
-                    </motion.button>
+                      <motion.button
+                        whileHover={{ x: 4 }}
+                        onClick={() => !isGenerating && editingId !== game.id && loadFromLibrary(game)}
+                        className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 relative
+                          ${file?.name === game.name 
+                            ? 'bg-gold/10 border-gold/40' 
+                            : 'bg-white/[0.02] border-white/5 hover:border-gold/20 hover:bg-white/[0.04]'}`}
+                      >
+                        <div className="w-8 h-8 rounded bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30">
+                          <Book className="w-4 h-4 text-gold/60 group-hover:text-gold" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {editingId === game.id ? (
+                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                              <input 
+                                autoFocus
+                                value={editValue}
+                                onChange={e => setEditValue(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleRename()}
+                                className="bg-bg-base border border-gold/40 text-[11px] text-white px-1 py-0.5 rounded w-full outline-none"
+                              />
+                              <button onClick={() => handleRename()} className="text-emerald-500 hover:text-emerald-400">
+                                <Check className="w-3 h-3" />
+                              </button>
+                              <button onClick={() => setEditingId(null)} className="text-red-500 hover:text-red-400">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="text-[11px] font-medium text-white truncate pr-16">{game.name}</div>
+                              <div className="text-[9px] text-text-muted">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
+                            </>
+                          )}
+                        </div>
+                      </motion.button>
+                      
+                      {editingId !== game.id && (
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={(e) => startEditing(game, e)}
+                            className="p-1.5 text-text-muted hover:text-gold transition-colors"
+                            title="Rename"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button 
+                            onClick={(e) => deleteFromLibrary(game.id, e)}
+                            className="p-1.5 text-text-muted hover:text-red-500 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </motion.div>
                   ))
                 ) : (
                   <p className="text-[10px] text-text-muted italic opacity-50 px-2">Your shelf is empty...</p>

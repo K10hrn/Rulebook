@@ -99,6 +99,25 @@ export async function deleteFromDrive(accessToken: string, fileId: string): Prom
 }
 
 /**
+ * Renames a file in Drive.
+ */
+export async function renameInDrive(accessToken: string, fileId: string, newName: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'PATCH',
+    headers: { 
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ name: newName })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(`Drive Rename Failed: ${err.error.message}`);
+  }
+}
+
+/**
  * Helper to find or create the hidden app folder.
  */
 async function getOrCreateFolder(accessToken: string): Promise<string> {
