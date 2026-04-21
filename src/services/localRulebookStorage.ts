@@ -6,6 +6,7 @@ export interface LocalGame {
   size: number;
   date: number;
   data: Uint8Array; // The actual PDF data
+  iconUrl?: string; // Optional custom icon
 }
 
 const STORAGE_KEY_PREFIX = 'rulebook_';
@@ -49,6 +50,15 @@ export async function renameRulebookLocally(id: string, newName: string) {
   const game = await get<LocalGame>(key);
   if (game) {
     game.name = newName;
+    await set(key, game);
+  }
+}
+
+export async function updateRulebookIconLocally(id: string, iconUrl: string) {
+  const key = `${STORAGE_KEY_PREFIX}${id}`;
+  const game = await get<LocalGame>(key);
+  if (game) {
+    game.iconUrl = iconUrl;
     await set(key, game);
   }
 }

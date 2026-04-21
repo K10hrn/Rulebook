@@ -11,6 +11,7 @@ export interface DriveFileMetadata {
   name: string;
   size: number;
   createdTime: string;
+  description?: string; // We'll use this to store the icon URL
 }
 
 /**
@@ -52,7 +53,7 @@ export async function fetchFromDrive(accessToken: string): Promise<DriveFileMeta
   const folderId = await getOrCreateFolder(accessToken);
   
   const query = `'${folderId}' in parents and trashed = false and mimeType = '${DRIVE_MIME_TYPE}'`;
-  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,size,createdTime)&orderBy=createdTime desc`;
+  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,size,createdTime,description)&orderBy=createdTime desc`;
 
   const response = await fetch(url, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -114,6 +115,25 @@ export async function renameInDrive(accessToken: string, fileId: string, newName
   if (!response.ok) {
     const err = await response.json();
     throw new Error(`Drive Rename Failed: ${err.error.message}`);
+  }
+}
+
+/**
+ * Updates the icon URL in Drive (stored in description).
+ */
+export async function updateIconInDrive(accessToken: string, fileId: string, iconUrl: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'PATCH',
+    headers: { 
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ description: iconUrl })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(`Drive Icon Update Failed: ${err.error.message}`);
   }
 }
 

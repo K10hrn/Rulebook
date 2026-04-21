@@ -28,7 +28,9 @@ import {
   ListChecks,
   HelpCircle,
   MessageCircle,
-  ShieldCheck
+  ShieldCheck,
+  Image,
+  Link as LinkIcon
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -45,6 +47,7 @@ import {
   saveRulebookLocally, 
   deleteRulebookLocally, 
   renameRulebookLocally,
+  updateRulebookIconLocally,
   getBase64FromUint8Array
 } from './services/localRulebookStorage';
 import { 
@@ -53,6 +56,7 @@ import {
   downloadFromDrive, 
   deleteFromDrive,
   renameInDrive,
+  updateIconInDrive,
   DriveFileMetadata 
 } from './services/googleDriveService';
 import { rulebookService, Message } from './services/geminiService';
@@ -72,6 +76,8 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [editingIconId, setEditingIconId] = useState<string | null>(null);
+  const [iconUrlValue, setIconUrlValue] = useState('');
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,7 +110,8 @@ export default function App() {
           name: f.name,
           size: Number(f.size),
           date: new Date(f.createdTime).getTime(),
-          data: new Uint8Array() // Data is fetched on-demand for Drive files
+          data: new Uint8Array(), // Data is fetched on-demand for Drive files
+          iconUrl: f.description
         }));
         setLibrary(games);
       } else {
@@ -223,6 +230,27 @@ export default function App() {
       console.error("Rename failed:", err);
     } finally {
       setEditingId(null);
+    }
+  };
+
+  const handleUpdateIcon = async () => {
+    if (!editingIconId || !iconUrlValue.trim()) {
+      setEditingIconId(null);
+      return;
+    }
+
+    try {
+      if (driveToken) {
+        await updateIconInDrive(driveToken, editingIconId, iconUrlValue.trim());
+        loadLibrary(driveToken);
+      } else {
+        await updateRulebookIconLocally(editingIconId, iconUrlValue.trim());
+        loadLibrary();
+      }
+    } catch (err) {
+      console.error("Icon update failed:", err);
+    } finally {
+      setEditingIconId(null);
     }
   };
 
@@ -478,14 +506,18 @@ export default function App() {
                     >
                       <motion.button
                         whileHover={{ x: 4 }}
-                        onClick={() => !isGenerating && editingId !== game.id && loadFromLibrary(game)}
+                        onClick={() => !isGenerating && editingId !== game.id && editingIconId !== game.id && loadFromLibrary(game)}
                         className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 relative
                           ${file?.name === game.name 
                             ? 'bg-gold/10 border-gold/40' 
                             : 'bg-white/[0.02] border-white/5 hover:border-gold/20 hover:bg-white/[0.04]'}`}
                       >
-                        <div className="w-8 h-8 rounded bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30">
-                          <Book className="w-4 h-4 text-gold/60 group-hover:text-gold" />
+                        <div className="w-8 h-8 rounded bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30 overflow-hidden">
+                          {game.iconUrl ? (
+                            <img src={game.iconUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <Book className="w-4 h-4 text-gold/60 group-hover:text-gold" />
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           {editingId === game.id ? (
@@ -504,6 +536,26 @@ export default function App() {
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
+                          ) : editingIconId === game.id ? (
+                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                              <div className="flex-1 relative">
+                                <LinkIcon className="absolute left-1 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-gold/50" />
+                                <input 
+                                  autoFocus
+                                  placeholder="Logo URL..."
+                                  value={iconUrlValue}
+                                  onChange={e => setIconUrlValue(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && handleUpdateIcon()}
+                                  className="bg-bg-base border border-gold/40 text-[9px] text-white pl-5 pr-1 py-0.5 rounded w-full outline-none"
+                                />
+                              </div>
+                              <button onClick={() => handleUpdateIcon()} className="text-emerald-500 hover:text-emerald-400">
+                                <Check className="w-3 h-3" />
+                              </button>
+                              <button onClick={() => setEditingIconId(null)} className="text-red-500 hover:text-red-400">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
                           ) : (
                             <>
                               <div className="text-[11px] font-medium text-white truncate pr-16">{game.name}</div>
@@ -513,8 +565,15 @@ export default function App() {
                         </div>
                       </motion.button>
                       
-                      {editingId !== game.id && (
+                      {editingId !== game.id && editingIconId !== game.id && (
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setEditingIconId(game.id); setIconUrlValue(game.iconUrl || ''); }}
+                            className="p-1.5 text-text-muted hover:text-gold transition-colors"
+                            title="Set Logo URL"
+                          >
+                            <Image className="w-3 h-3" />
+                          </button>
                           <button 
                             onClick={(e) => startEditing(game, e)}
                             className="p-1.5 text-text-muted hover:text-gold transition-colors"
@@ -640,14 +699,6 @@ export default function App() {
                     <p className="text-text-muted max-w-sm mb-10 text-sm leading-relaxed">
                       Index a new game rulebook into your local library to begin your consultation.
                     </p>
-                    
-                    <div className="flex flex-wrap justify-center gap-3">
-                      {['Mechanics', 'Setup', 'Errata'].map(tag => (
-                        <div key={tag} className="px-5 py-2.5 bg-gold/5 text-gold text-[10px] uppercase tracking-[0.2em] font-bold rounded shadow-sm border border-gold/20">
-                          {tag}
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -678,8 +729,12 @@ export default function App() {
                         onClick={() => loadFromLibrary(game)}
                         className="glass p-5 rounded-[1.5rem] cursor-pointer hover:bg-gold/10 hover:border-gold/40 transition-all border border-white/5 relative group/item flex flex-col items-center text-center shadow-xl hover:shadow-gold/5"
                       >
-                        <div className="w-16 h-16 rounded-2xl bg-gold/5 border border-gold/10 flex items-center justify-center mb-4 transition-all group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3 shadow-inner">
-                          <Library className="w-8 h-8 text-gold/40 transition-all group-hover/item:text-gold group-hover/item:scale-110" />
+                        <div className="w-16 h-16 rounded-2xl bg-gold/5 border border-gold/10 flex items-center justify-center mb-4 transition-all group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3 shadow-inner overflow-hidden">
+                          {game.iconUrl ? (
+                            <img src={game.iconUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <Library className="w-8 h-8 text-gold/40 transition-all group-hover/item:text-gold group-hover/item:scale-110" />
+                          )}
                         </div>
                         
                         <div className="w-full flex-1 min-w-0">
