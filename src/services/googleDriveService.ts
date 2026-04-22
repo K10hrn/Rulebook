@@ -122,7 +122,7 @@ export async function renameInDrive(accessToken: string, fileId: string, newName
  * Updates the icon URL in Drive (stored in description).
  * We store it as a JSON string to keep things tidy.
  */
-export async function updateMetadataInDrive(accessToken: string, fileId: string, updates: { iconUrl?: string }): Promise<void> {
+export async function updateMetadataInDrive(accessToken: string, fileId: string, updates: { iconUrl?: string, lastUsed?: number }): Promise<void> {
   // 1. Get existing description first to merge
   const getResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=description`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -161,11 +161,11 @@ export async function updateIconInDrive(accessToken: string, fileId: string, ico
   return updateMetadataInDrive(accessToken, fileId, { iconUrl });
 }
 
-export async function updateFullMetadataInDrive(accessToken: string, fileId: string, updates: { name?: string, iconUrl?: string }): Promise<void> {
+export async function updateFullMetadataInDrive(accessToken: string, fileId: string, updates: { name?: string, iconUrl?: string, lastUsed?: number }): Promise<void> {
   const body: any = {};
   if (updates.name) body.name = updates.name;
   
-  if (updates.iconUrl !== undefined) {
+  if (updates.iconUrl !== undefined || updates.lastUsed !== undefined) {
     // 1. Get existing description first to merge
     const getResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=description`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -181,8 +181,8 @@ export async function updateFullMetadataInDrive(accessToken: string, fileId: str
       }
     }
 
-    const mergedMeta = { ...currentMetadata };
-    if (updates.iconUrl !== undefined) mergedMeta.iconUrl = updates.iconUrl;
+    const mergedMeta = { ...currentMetadata, ...updates };
+    delete mergedMeta.name; // Don't store name in description JSON
     
     body.description = JSON.stringify(mergedMeta);
   }

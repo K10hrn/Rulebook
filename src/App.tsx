@@ -30,10 +30,12 @@ import {
   MessageCircle,
   ShieldCheck,
   Image,
+  Eye,
   Link as LinkIcon,
   XCircle,
   Settings,
   Sparkles,
+  Zap,
   Sun,
   Moon,
   CloudUpload,
@@ -113,10 +115,13 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
   const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [activeGameId, setActiveGameId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasLocalGames, setHasLocalGames] = useState(false);
   const [isSyncingLocalToCloud, setIsSyncingLocalToCloud] = useState(false);
   const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try {
       return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
@@ -187,10 +192,12 @@ export default function App() {
         // Map Drive metadata to our UI format
         const games: LocalGame[] = driveGames.map(f => {
           let iconUrl = f.description;
+          let lastUsed = 0;
           
           try {
             const meta = JSON.parse(f.description || '{}');
             iconUrl = meta.iconUrl || iconUrl;
+            lastUsed = meta.lastUsed || 0;
           } catch {
             // Keep iconUrl as raw description if parse fails
           }
@@ -201,7 +208,8 @@ export default function App() {
             size: Number(f.size),
             date: new Date(f.createdTime).getTime(),
             data: new Uint8Array(), // Data is fetched on-demand for Drive files
-            iconUrl
+            iconUrl,
+            lastUsed
           };
         });
         setLibrary(games);
@@ -279,10 +287,14 @@ export default function App() {
 
   const processFile = async (selectedFile: File) => {
     setIsUploading(true);
+    const now = Date.now();
     try {
       if (driveToken) {
         // Cloud Sync: Upload to Drive
         const driveFile = await uploadToDrive(driveToken, selectedFile);
+        if (driveToken && driveFile.id) {
+          await updateFullMetadataInDrive(driveToken, driveFile.id, { lastUsed: now });
+        }
         
         // Prepare for current session (local read)
         const arrayBuffer = await selectedFile.arrayBuffer();
@@ -394,10 +406,48 @@ export default function App() {
     }
   };
 
-  const loadFromLibrary = async (game: LocalGame) => {
-    setIsUploading(true);
+  const viewRulebook = async (game: LocalGame) => {
     try {
       let base64 = '';
+      if (driveToken && game.data.length === 0) {
+        base64 = await downloadFromDrive(driveToken, game.id);
+      } else {
+        base64 = await getBase64FromUint8Array(game.data);
+      }
+      const binaryString = window.atob(base64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error("Failed to view rulebook:", err);
+      alert("Could not open file for viewing.");
+    }
+  };
+
+  const loadFromLibrary = async (game: LocalGame) => {
+    setIsGenerating(false);
+    setStreamingMessage('');
+    setMessages([]);
+    
+    // Update last used
+    const now = Date.now();
+    if (driveToken && game.id) {
+      updateFullMetadataInDrive(driveToken, game.id, { lastUsed: now });
+    } else if (game.id) {
+      updateRulebookMetadataLocally(game.id, { lastUsed: now });
+    }
+    
+    // Optimistic update
+    setLibrary(prev => prev.map(g => g.id === game.id ? { ...g, lastUsed: now } : g));
+
+    let base64 = '';
+    setIsUploading(true);
+    try {
       if (driveToken && game.data.length === 0) {
         // Fetch data from Drive if it's not local
         base64 = await downloadFromDrive(driveToken, game.id);
@@ -407,7 +457,9 @@ export default function App() {
       
       rulebookService.setPDF(base64);
       setFile({ name: game.name, size: game.size });
+      setActiveGameId(game.id);
       setIsActive(true);
+      setIsLibraryOpen(false);
       setMessages([
         { role: 'model', content: `The Arbiter has recalled the rules for **${game.name}**. I am ready to provide final rulings.` }
       ]);
@@ -559,7 +611,7 @@ export default function App() {
                 <Dices className="w-3.5 h-3.5 text-bg-base" />
               </div>
             </div>
-            <h1 className="font-serif text-xl font-light text-text-gold tracking-widest uppercase gold-text-glow">RULEBOOK</h1>
+            <h1 className="font-serif text-lg font-light text-text-gold tracking-widest uppercase gold-text-glow">Rulebooks</h1>
           </div>
           
           <button 
@@ -570,12 +622,12 @@ export default function App() {
             }}
             className="w-full glass py-3 rounded text-[10px] uppercase tracking-[0.2em] text-gold font-bold mb-8 hover:bg-gold/10 hover:border-gold/30 transition-all cursor-pointer gold-glow"
           >
-            + Archive Rulebook
+            + Summon Arbiter
           </button>
 
           <div className="flex flex-col gap-6 flex-1 overflow-hidden">
             <div className="text-[10px] uppercase tracking-[0.2em] text-text-muted font-bold flex items-center justify-between">
-              <span>Active Game</span>
+              <span>Active Rulebook</span>
               {file && <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse"></span>}
             </div>
             
@@ -587,16 +639,29 @@ export default function App() {
                   className="p-3 bg-[var(--color-gold-muted)] border-l-2 border-gold rounded-r flex items-center gap-3 group"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-white truncate">{file.name}</div>
-                    <div className="text-[10px] opacity-60">{(file.size / 1024 / 1024).toFixed(1)} MB • PDF</div>
+                    <div className="text-xs font-semibold text-text-primary truncate">{file.name}</div>
+                    <div className="text-[10px] opacity-60 text-text-muted">{(file.size / 1024 / 1024).toFixed(1)} MB • PDF</div>
                   </div>
-                  <button 
-                    onClick={resetOracle}
-                    className="p-1 text-text-muted hover:text-red-500 transition-colors"
-                    title="Close current game"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={() => {
+                         // Find the game in library to get its data
+                         const game = library.find(g => g.name === file.name);
+                         if (game) viewRulebook(game);
+                      }}
+                      className="p-1 text-text-muted hover:text-white transition-colors"
+                      title="View PDF"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={resetOracle}
+                      className="p-1 text-text-muted hover:text-red-500 transition-colors"
+                      title="Close current game"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </motion.div>
                 
                 <div className="grid grid-cols-1 gap-2 pt-2">
@@ -693,7 +758,9 @@ export default function App() {
               
               <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
                 {library.length > 0 ? (
-                  library.map((game) => (
+                  library
+                    .sort((a, b) => (b.lastUsed || b.date) - (a.lastUsed || a.date))
+                    .map((game) => (
                     <motion.div
                       key={game.id}
                       className="relative group"
@@ -710,13 +777,20 @@ export default function App() {
                           iconUrl={game.iconUrl} 
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="text-[11px] font-medium text-white truncate pr-16">{game.name}</div>
-                          <div className="text-[9px] text-text-muted">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
+                          <div className="text-[11px] font-medium text-text-primary truncate">{game.name}</div>
+                          <div className="text-[9px] text-text-muted font-medium italic opacity-60">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
                         </div>
                       </motion.button>
                       
                       {!managingGame && (
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); viewRulebook(game); }}
+                            className="p-1.5 text-text-muted hover:text-white transition-colors"
+                            title="View Rulebook"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
                           <button 
                             onClick={(e) => openManageModal(game, e)}
                             className="p-1.5 text-text-muted hover:text-gold transition-colors"
@@ -755,7 +829,7 @@ export default function App() {
                   </div>
                 )}
                 <div>
-                  <p className="text-[11px] font-bold text-white truncate max-w-[100px]">{currentUser.displayName || 'The Scribe'}</p>
+                  <p className="text-[11px] font-bold text-text-primary truncate max-w-[100px]">{currentUser.displayName || 'The Scribe'}</p>
                   <p className="text-[9px] text-text-gold uppercase tracking-widest opacity-60">
                     {driveToken ? 'Cloud Sync On' : 'Session Active'}
                   </p>
@@ -799,18 +873,55 @@ export default function App() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-screen max-h-screen relative overflow-hidden bg-bg-base">
-        {/* Mobile/Floating Header */}
-        <header className="h-16 border-b border-line flex items-center justify-between px-8 bg-bg-surface">
-          <div>
-            <h2 className="text-sm font-light flex items-center gap-2">
-              <span className="opacity-40 uppercase text-[10px] tracking-widest">Arbiter Ruling on</span> 
-              <span className="text-text-gold font-serif italic">{file ? file.name : "Unbound Rules"}</span>
+        {/* Mobile Header */}
+        <header className="h-16 md:h-18 border-b border-line flex items-center justify-between px-4 md:px-8 bg-bg-surface z-20">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsLibraryOpen(true)}
+              className="md:hidden flex items-center gap-2 mr-2 p-1 active:scale-95 transition-transform"
+            >
+              <div className="w-8 h-8 bg-gold/10 rounded-lg border border-gold/40 flex items-center justify-center">
+                <Library className="w-4 h-4 text-gold" />
+              </div>
+            </button>
+            <h2 className="text-[11px] md:text-sm font-light flex flex-col md:flex-row md:items-center md:gap-2">
+              <span className="opacity-40 uppercase text-[8px] md:text-[10px] tracking-widest">Arbiter Ruling on</span> 
+              <span className="text-text-gold font-serif italic truncate max-w-[120px] md:max-w-none">{file ? file.name : "Unbound Rules"}</span>
             </h2>
           </div>
-          <div className="flex gap-4">
-            {!isActive && <Bot className="w-4 h-4 text-text-gold opacity-50" />}
+          
+          <div className="flex items-center gap-1 md:gap-4">
+            <button 
+              onClick={() => setIsAboutOpen(true)}
+              className="p-2 text-text-muted hover:text-gold transition-colors"
+              title="About Rulebook Arbiter"
+            >
+              <Info className="w-4 h-4" />
+            </button>
+
+            <div className="h-4 w-[1px] bg-line/50 mx-1 md:hidden"></div>
+
+            {/* Mobile-only User Controls */}
+            <div className="flex items-center gap-1 md:hidden">
+              {currentUser ? (
+                <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} className="p-2 text-text-muted">
+                  {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
+              ) : (
+                <button onClick={handleLogin} className="flex items-center gap-1.5 px-3 py-1.5 bg-gold/10 text-gold rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                  <LogIn className="w-3.5 h-3.5" /> Sign In
+                </button>
+              )}
+              {currentUser && (
+                <div className="w-7 h-7 rounded-full border border-gold/30 overflow-hidden ml-1">
+                   <img src={currentUser.photoURL || ''} alt="" className="w-full h-full object-cover" />
+                </div>
+              )}
+            </div>
+
+            {!isActive && <Bot className="hidden md:block w-4 h-4 text-text-gold opacity-50" />}
             {isActive && (
-              <button onClick={resetOracle} className="text-[10px] uppercase tracking-widest opacity-60 hover:opacity-100 text-text-gold">
+              <button onClick={resetOracle} className="text-[9px] md:text-[10px] uppercase tracking-widest opacity-60 hover:opacity-100 text-text-gold">
                 Dismiss Arbiter
               </button>
             )}
@@ -818,20 +929,27 @@ export default function App() {
         </header>
 
         {!isActive ? (
-          <div className="flex-1 flex flex-col md:flex-row p-8 gap-8 overflow-y-auto bg-[radial-gradient(circle_at_50%_-20%,_rgba(212,175,55,0.08)_0%,_transparent_50%)]">
-            {/* Upload Area */}
-            <div className="flex-1 flex flex-col justify-center items-center">
-              <motion.div 
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="max-w-xl w-full"
-              >
-                <div 
-                  className={`relative group cursor-pointer glass rounded-[2.5rem] p-16 transition-all text-center gold-glow
-                    ${isUploading ? 'bg-white/5 border-gold shadow-[0_0_40px_rgba(212,175,55,0.1)]' : 'hover:bg-white/5 hover:scale-[1.01] hover:border-gold/20'}`}
-                  onClick={() => !isUploading && fileInputRef.current?.click()}
-                >
-                  <div className="flex flex-col items-center">
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 bg-[radial-gradient(circle_at_50%_-20%,_rgba(212,175,55,0.05)_0%,_transparent_50%)]">
+            <div className="max-w-6xl mx-auto space-y-12 pb-24">
+              {/* Library / Pick a Game Section */}
+              <div className="flex flex-col gap-8">
+                <div className="flex items-center justify-between border-b border-line pb-6">
+                  <div className="flex flex-col">
+                    <h3 className="text-xl font-serif text-text-gold gold-text-glow flex items-center gap-3">
+                      <Library className="w-6 h-6" /> Rulebook Library
+                    </h3>
+                    <p className="text-sm text-text-muted mt-1 italic">Knowledge catalogued for your consultation</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="hidden sm:inline-block px-3 py-1.5 rounded-full bg-gold/10 border border-gold/20 text-[10px] text-gold font-bold tracking-widest uppercase">
+                      {library.length} Rulebook{library.length !== 1 ? 's' : ''}
+                    </span>
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-gold text-bg-base px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-gold/20"
+                    >
+                      + Summon Arbiter
+                    </button>
                     <input 
                       type="file" 
                       className="hidden" 
@@ -839,89 +957,79 @@ export default function App() {
                       onChange={handleFileChange}
                       accept=".pdf"
                     />
-                    <div className={`relative mb-10 group-hover:scale-105 transition-transform ${isUploading ? 'animate-pulse' : ''}`}>
-                      <div className={`p-10 rounded-[2rem] border shadow-2xl relative ${isUploading ? 'bg-gold text-bg-base border-gold' : 'bg-transparent text-gold border-gold/30'}`}>
-                        <Library className="w-20 h-20" />
-                      </div>
-                      <div className="absolute -bottom-2 -right-2 w-12 h-12 bg-gold rounded-2xl flex items-center justify-center shadow-2xl border-4 border-bg-base">
-                        <Dices className="w-7 h-7 text-bg-base" />
-                      </div>
-                    </div>
-                    <h2 className="text-4xl font-serif text-text-gold mb-3 gold-text-glow">Summon Arbiter</h2>
-                    <p className="text-text-muted max-w-sm mb-10 text-sm leading-relaxed">
-                      Index a new game rulebook into your local library to begin your consultation.
-                    </p>
                   </div>
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Library / Pick a Game Section */}
-            {library.length > 0 && (
-              <div className="w-full md:w-[28rem] flex flex-col gap-6">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex flex-col">
-                    <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-text-gold gold-text-glow flex items-center gap-2">
-                      <Library className="w-4 h-4" /> Rulebook Library
-                    </h3>
-                    <p className="text-[10px] text-text-muted mt-1">Select a title to consult the Arbiter</p>
-                  </div>
-                  <span className="px-2 py-1 rounded bg-gold/10 border border-gold/20 text-[9px] text-gold font-bold">{library.length} Rulebooks</span>
                 </div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 overflow-y-auto pr-2 max-h-[600px] custom-scrollbar pb-10">
-                  <AnimatePresence>
-                    {library.map((game) => (
-                      <motion.div
-                        key={game.id}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        whileHover={{ y: -4, scale: 1.02 }}
-                        onClick={() => loadFromLibrary(game)}
-                        className="glass p-5 rounded-[1.5rem] cursor-pointer hover:bg-gold/10 hover:border-gold/40 transition-all border border-white/5 relative group/item flex flex-col items-center text-center shadow-xl hover:shadow-gold/5"
-                      >
-                        <GameIcon 
-                          iconUrl={game.iconUrl} 
-                          className="w-16 h-16 rounded-2xl group-hover/item:bg-gold/20 group-hover/item:border-gold/40 group-hover/item:rotate-3"
-                        />
-                        
-                        <div className="w-full flex-1 min-w-0">
-                          <h4 className="text-sm font-serif text-white line-clamp-2 mb-2 min-h-[2.5rem] flex items-center justify-center leading-tight">{game.name}</h4>
-                          <div className="flex items-center justify-center gap-2 text-[9px] text-text-muted uppercase tracking-tighter">
-                            <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" /> {new Date(game.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                            <span className="w-1 h-1 rounded-full bg-white/10"></span>
-                            <span>{(game.size / 1024 / 1024).toFixed(1)} MB</span>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 pt-4 border-t border-white/5 w-full flex items-center justify-center gap-2">
-                           <span className="text-[8px] uppercase tracking-widest text-gold font-bold opacity-0 group-hover/item:opacity-100 transition-opacity">Consult Rules</span>
-                           <ChevronRight className="w-3 h-3 text-gold opacity-0 group-hover/item:opacity-100 group-hover/item:translate-x-1 transition-all" />
-                        </div>
-
-                        <button
-                          onClick={(e) => deleteFromLibrary(game.id, e)}
-                          className="absolute top-2 right-2 p-2 text-text-muted hover:text-red-400 opacity-0 group-hover/item:opacity-100 transition-all"
+                {library.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <AnimatePresence>
+                      {[...library]
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((game) => (
+                        <motion.div
+                          key={game.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          whileHover={{ y: -6 }}
+                          onClick={() => loadFromLibrary(game)}
+                          className="glass p-6 rounded-[2rem] cursor-pointer hover:bg-gold/10 hover:border-gold/40 transition-all border border-line/10 relative group/item flex flex-col shadow-xl hover:shadow-gold/10"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                        
-                        {/* Decorative Box Edge */}
-                        <div className="absolute inset-x-0 bottom-0 h-1 bg-gold/20 rounded-b-[1.5rem] group-hover/item:bg-gold/40 transition-colors"></div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </div>
+                          <div className="flex gap-4 items-start mb-6">
+                            <GameIcon 
+                              iconUrl={game.iconUrl} 
+                              className="w-16 h-16 rounded-2xl group-hover/item:shadow-lg group-hover/item:shadow-gold/10 transition-shadow"
+                            />
+                            <div className="flex-1 min-w-0 pt-1">
+                              <h4 className="text-sm font-serif text-text-primary line-clamp-2 leading-tight group-hover/item:text-text-gold transition-colors">{game.name}</h4>
+                              <p className="text-[10px] text-text-muted uppercase tracking-widest mt-2 flex items-center gap-1.5">
+                                <Clock className="w-3 h-3" /> 
+                                {game.lastUsed ? new Date(game.lastUsed).toLocaleDateString() : 'Last Saved: ' + new Date(game.date).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-auto flex items-center justify-between pt-6 border-t border-line/10">
+                            <div className="flex items-center gap-1 text-text-muted">
+                              <span className="text-[9px] font-bold">{(game.size / 1024 / 1024).toFixed(1)} MB</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); viewRulebook(game); }}
+                                className="p-2 text-text-muted hover:text-text-primary transition-colors hover:bg-white/5 rounded-full"
+                                title="Open PDF"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => deleteFromLibrary(game.id, e)}
+                                className="p-2 text-text-muted hover:text-red-500 transition-colors hover:bg-red-500/5 rounded-full"
+                                title="Remove"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="absolute inset-x-0 bottom-0 h-1.5 bg-gold/0 group-hover/item:bg-gold/40 rounded-b-[2rem] transition-all"></div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <div 
+                    onClick={() => !isUploading && fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center py-32 border-2 border-dashed border-line/20 rounded-[3rem] opacity-40 hover:opacity-100 hover:border-gold/40 hover:bg-gold/5 transition-all cursor-pointer group"
+                  >
+                    <div className={`w-20 h-20 bg-gold/10 rounded-full flex items-center justify-center mb-6 border border-gold/20 group-hover:scale-110 transition-transform ${isUploading ? 'animate-pulse' : ''}`}>
+                      <CloudUpload className="w-10 h-10 text-gold" />
+                    </div>
+                    <p className="text-lg font-serif italic text-text-primary">{isUploading ? 'The Arbiter is indexing...' : 'Your library is waiting to be filled...'}</p>
+                    <p className="text-[10px] uppercase tracking-widest text-text-muted mt-2">Click or drag a Rulebook PDF to summon the Arbiter</p>
+                  </div>
+                )}
               </div>
-            )}
-            
-            {library.length === 0 && !isUploading && (
-              <div className="w-full md:w-80 flex flex-col justify-center items-center p-8 glass rounded-[2.5rem] border border-white/5 opacity-50 select-none">
-                <Book className="w-10 h-10 text-gold mb-4 opacity-30" />
-                <p className="text-[10px] uppercase tracking-widest text-text-muted text-center font-bold">Your library is empty.<br />Upload a PDF to start.</p>
-              </div>
-            )}
+            </div>
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -936,18 +1044,18 @@ export default function App() {
                 >
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border 
                     ${msg.role === 'user' 
-                      ? 'border-white/10 text-white/40 glass' 
+                      ? 'border-line/20 text-text-muted/60 glass' 
                       : 'bg-gold/10 border-gold/30 text-text-gold shadow-gold/10 shadow-lg'}`}
                   >
                     {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
                   </div>
                   
-                  <div className={`p-6 rounded-2xl shadow-2xl relative
+                  <div className={`p-6 rounded-2xl shadow-xl relative
                     ${msg.role === 'user' 
-                      ? 'glass rounded-tr-none' 
-                      : 'bg-bg-chat rounded-tl-none border border-white/5'}`}
+                      ? 'glass rounded-tr-none border border-line/10' 
+                      : 'bg-bg-chat rounded-tl-none border border-gold/10'}`}
                   >
-                    <div className="markdown-body prose prose-invert max-w-none">
+                    <div className="markdown-body prose prose-slate dark:prose-invert max-w-none">
                       <Markdown>{msg.content}</Markdown>
                     </div>
                   </div>
@@ -1002,7 +1110,7 @@ export default function App() {
                   onClick={handleSendMessage}
                   className={`absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center transition-all
                     ${!inputValue.trim() || isGenerating 
-                      ? 'bg-zinc-800 text-zinc-500' 
+                      ? 'bg-line/20 text-text-muted/40' 
                       : 'bg-gold text-bg-base hover:scale-105 shadow-[0_0_20px_rgba(197,163,104,0.3)]'}`}
                 >
                   {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
@@ -1015,6 +1123,85 @@ export default function App() {
           </div>
         )}
       </div>
+      {/* About Modal */}
+      <AnimatePresence>
+        {isAboutOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-lg glass rounded-[2.5rem] p-4 md:p-10 border border-gold/20 shadow-2xl relative"
+            >
+              <button 
+                onClick={() => setIsAboutOpen(false)} 
+                className="absolute right-6 top-6 p-2 text-text-muted hover:text-white transition-colors"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+
+              <div className="flex flex-col items-center text-center mb-8">
+                <div className="w-16 h-16 bg-gold/10 rounded-2xl border border-gold/40 flex items-center justify-center mb-6 gold-glow">
+                  <Library className="w-8 h-8 text-gold" />
+                </div>
+                <h3 className="text-3xl font-serif text-text-gold mb-2 gold-text-glow">The Rulebook Arbiter</h3>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-text-muted font-bold opacity-50">Grand Library Edition • v1.0.4</p>
+              </div>
+
+              <div className="space-y-6 text-sm text-text-muted leading-relaxed max-h-[60vh] overflow-y-auto px-4 custom-scrollbar">
+                <div className="p-4 bg-gold/5 rounded-2xl border border-gold/10">
+                  <p className="text-text-primary mb-3 font-semibold flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-gold" /> For Players, By Choice
+                  </p>
+                  <p>
+                    This service is provided entirely <strong className="text-text-gold">free of charge</strong> as a resource for the tabletop gaming community.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <p>
+                    The Rulebook Arbiter is a specialized AI engine designed to provide instant, precise rulings based strictly on the text of your tabletop games.
+                  </p>
+                  
+                  <div className="flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-full bg-line/20 flex items-center justify-center shrink-0 mt-1">
+                      <ShieldCheck className="w-4 h-4 text-text-gold" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium mb-1">Your Library, Your Privacy</p>
+                      <p className="text-xs">Your rulebooks are stored locally in your browser. If you choose to sign in, your library syncs securely with your private Google Drive—I never see your files on my servers.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-full bg-line/20 flex items-center justify-center shrink-0 mt-1">
+                      <Zap className="w-4 h-4 text-text-gold" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium mb-1">AI Costs & Quotas</p>
+                      <p className="text-xs">The brain power (Gemini AI) is provided through the creator's API project. Because I pay for the tokens (words) processed, there are small rate limits to ensure the service remains free for everyone.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 text-center italic text-[#8d8d99]">
+                  "Justice for the board, integrity for the rules."
+                </div>
+              </div>
+
+              <div className="mt-10">
+                <button 
+                  onClick={() => setIsAboutOpen(false)}
+                  className="w-full py-4 px-8 rounded-2xl bg-gold text-bg-base font-bold uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
+                  Return to Library
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Manage Game Modal */}
       <AnimatePresence>
         {managingGame && (
@@ -1033,14 +1220,14 @@ export default function App() {
               </div>
 
               <div className="space-y-6">
-                <div className="flex items-center gap-6 p-4 glass rounded-2xl border border-white/5 bg-white/[0.02]">
+                <div className="flex items-center gap-6 p-4 glass rounded-2xl border border-line/10 bg-white/[0.02]">
                   <GameIcon 
                     iconUrl={manageLogo} 
-                    className="w-20 h-20 rounded-2xl shadow-2xl border-white/10"
+                    className="w-20 h-20 rounded-2xl shadow-2xl border-line/20"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="text-[10px] uppercase tracking-widest text-text-muted mb-1 font-bold">Preview</div>
-                    <div className="text-sm font-serif text-white truncate">{manageName || "Game Title"}</div>
+                    <div className="text-sm font-serif text-text-primary truncate">{manageName || "Game Title"}</div>
                   </div>
                 </div>
 
@@ -1115,6 +1302,82 @@ export default function App() {
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Library Drawer */}
+      <AnimatePresence>
+        {isLibraryOpen && (
+          <div className="fixed inset-0 z-[120] md:hidden">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsLibraryOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              className="absolute inset-y-0 left-0 w-[85%] max-w-sm bg-bg-sidebar border-r border-line flex flex-col p-6 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-gold/10 rounded-lg border border-gold/40 flex items-center justify-center">
+                    <Library className="w-4 h-4 text-gold" />
+                  </div>
+                  <h3 className="font-serif text-lg text-text-gold tracking-wide uppercase">Rulebook Library</h3>
+                </div>
+                <button onClick={() => setIsLibraryOpen(false)} className="p-2 text-text-muted hover:text-white">
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
+                {library.length > 0 ? (
+                  library.map((game) => (
+                    <div key={game.id} className="relative">
+                      <button
+                        onClick={() => {
+                          loadFromLibrary(game);
+                          setIsLibraryOpen(false);
+                        }}
+                        className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center gap-4
+                          ${file?.name === game.name 
+                            ? 'bg-gold/10 border-gold/40' 
+                            : 'bg-white/[0.02] border-transparent active:bg-white/[0.05]'}`}
+                      >
+                        <GameIcon iconUrl={game.iconUrl} className="w-10 h-10" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold text-text-primary truncate">{game.name}</div>
+                          <div className="text-[10px] text-text-muted">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
+                        </div>
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); viewRulebook(game); }}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-bg-base/50 rounded-lg border border-line/30 text-text-muted"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-12 opacity-30 italic text-xs">Library is empty</div>
+                )}
+              </div>
+
+              <button 
+                onClick={() => {
+                  setIsLibraryOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="w-full mt-6 py-4 bg-gold text-bg-base rounded-2xl font-bold uppercase tracking-widest flex items-center justify-center gap-2"
+              >
+                <CloudUpload className="w-4 h-4" /> New Rulebook
+              </button>
             </motion.div>
           </div>
         )}
