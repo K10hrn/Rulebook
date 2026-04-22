@@ -47,9 +47,11 @@ import {
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut,
+  sendEmailVerification,
   User as FirebaseUser
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { db, auth } from './firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { 
   LocalGame, 
   fetchLocalLibrary, 
@@ -116,6 +118,10 @@ export default function App() {
   const [streamingMessage, setStreamingMessage] = useState('');
   const [driveToken, setDriveToken] = useState<string | null>(null);
   const [activeGameId, setActiveGameId] = useState<string | null>(null);
+  const [isEmailUnverified, setIsEmailUnverified] = useState(false);
+  const [isNotAllowed, setIsNotAllowed] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasLocalGames, setHasLocalGames] = useState(false);
   const [isSyncingLocalToCloud, setIsSyncingLocalToCloud] = useState(false);
@@ -153,16 +159,51 @@ export default function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isAllowedUser = async (user: FirebaseUser) => {
+    const adminEmail = 'kellyellen.kenyon@gmail.com';
+    if (user.email === adminEmail) {
+      setIsAdmin(true);
+      return true;
+    }
+    
+    setIsAdmin(false);
+    try {
+      const allowRef = doc(db, 'allowlist', user.email || '');
+      const docSnap = await getDoc(allowRef);
+      return docSnap.exists();
+    } catch (e) {
+      // If we can't even check, they are likely not allowed due to rule denying read
+      return false;
+    }
+  };
+
   useEffect(() => {
     // Sync logic: When user logs in/out, reload the library
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      setAuthLoading(false);
-      
-      if (!user) {
+      if (user) {
+        setCurrentUser(user);
+        if (!user.emailVerified) {
+          setIsEmailUnverified(true);
+          setDriveToken(null);
+        } else {
+          setIsEmailUnverified(false);
+          const allowed = await isAllowedUser(user);
+          if (!allowed) {
+            setIsNotAllowed(true);
+            setDriveToken(null);
+          } else {
+            setIsNotAllowed(false);
+          }
+        }
+      } else {
+        setIsEmailUnverified(false);
+        setIsNotAllowed(false);
+        setIsAdmin(false);
+        setCurrentUser(null);
         setDriveToken(null);
         loadLibrary(); // Fallback to local
       }
+      setAuthLoading(false);
     });
 
     loadLibrary();
@@ -259,12 +300,29 @@ export default function App() {
     }
   };
 
+  const handleResendVerification = async () => {
+    if (currentUser) {
+      try {
+        await sendEmailVerification(currentUser);
+        setVerificationSent(true);
+        setTimeout(() => setVerificationSent(false), 5000);
+      } catch (err) {
+        console.error("Failed to send verification email:", err);
+      }
+    }
+  };
+
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
     provider.addScope('https://www.googleapis.com/auth/drive.file');
     
     try {
       const result = await signInWithPopup(auth, provider);
+      if (result.user && !result.user.emailVerified) {
+        setIsEmailUnverified(true);
+        return;
+      }
+      
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         const token = credential.accessToken;
@@ -276,12 +334,17 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
+  const handleAddToAllowList = async (email: string) => {
+    if (!isAdmin) return;
     try {
-      await signOut(auth);
-      resetOracle();
+      await setDoc(doc(db, 'allowlist', email.toLowerCase().trim()), {
+        addedAt: Date.now(),
+        addedBy: currentUser?.email
+      });
+      alert(`Access granted to ${email}`);
     } catch (err) {
-      console.error("Logout failed:", err);
+      console.error("Failed to add to allowlist:", err);
+      alert("Error adding user to access list.");
     }
   };
 
@@ -933,13 +996,47 @@ export default function App() {
             <div className="max-w-6xl mx-auto space-y-12 pb-24">
               {/* Library / Pick a Game Section */}
               <div className="flex flex-col gap-8">
-                <div className="flex items-center justify-between border-b border-line pb-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-line pb-6 gap-6">
                   <div className="flex flex-col">
                     <h3 className="text-xl font-serif text-text-gold gold-text-glow flex items-center gap-3">
                       <Library className="w-6 h-6" /> Rulebook Library
                     </h3>
                     <p className="text-sm text-text-muted mt-1 italic">Knowledge catalogued for your consultation</p>
                   </div>
+
+                  {isAdmin && (
+                    <div className="flex-1 max-w-md mx-auto md:mx-0">
+                      <div className="glass p-1.5 rounded-full border-gold/20 flex items-center gap-2 pr-4 bg-gold/5">
+                        <div className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center border border-gold/20 ml-1">
+                          <ShieldCheck className="w-4 h-4 text-gold" />
+                        </div>
+                        <input 
+                          type="email"
+                          placeholder="Invite by email..."
+                          className="flex-1 bg-transparent border-none text-xs focus:ring-0 text-text-primary placeholder:text-text-muted/50"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleAddToAllowList((e.target as HTMLInputElement).value);
+                              (e.target as HTMLInputElement).value = '';
+                            }
+                          }}
+                        />
+                        <button 
+                          onClick={(e) => {
+                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                            if (input && input.value) {
+                              handleAddToAllowList(input.value);
+                              input.value = '';
+                            }
+                          }}
+                          className="text-[10px] font-bold text-gold uppercase tracking-widest hover:text-white transition-colors"
+                        >
+                          Invite
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-4">
                     <span className="hidden sm:inline-block px-3 py-1.5 rounded-full bg-gold/10 border border-gold/20 text-[10px] text-gold font-bold tracking-widest uppercase">
                       {library.length} Rulebook{library.length !== 1 ? 's' : ''}
@@ -1377,6 +1474,78 @@ export default function App() {
                 className="w-full mt-6 py-4 bg-gold text-bg-base rounded-2xl font-bold uppercase tracking-widest flex items-center justify-center gap-2"
               >
                 <CloudUpload className="w-4 h-4" /> New Rulebook
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isEmailUnverified && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-bg-base/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="max-w-md w-full glass p-10 rounded-[3rem] border-gold/30 shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-gold/10 rounded-full flex items-center justify-center mx-auto mb-8 border border-gold/20 shadow-inner">
+                <ShieldCheck className="w-10 h-10 text-gold" />
+              </div>
+              <h2 className="text-3xl font-serif text-text-gold mb-4 gold-text-glow">Verification Required</h2>
+              <p className="text-text-muted mb-10 leading-relaxed text-sm">
+                To consult the Arbiter and safeguard your data, you must confirm your email address: <span className="text-text-primary font-bold">{currentUser?.email}</span>
+              </p>
+              
+              <div className="flex flex-col gap-4">
+                <button 
+                  onClick={handleResendVerification}
+                  disabled={verificationSent}
+                  className={`w-full py-4 rounded-2xl font-bold uppercase tracking-widest text-xs transition-all shadow-xl
+                    ${verificationSent 
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                      : 'bg-gold text-bg-base hover:scale-[1.02] active:scale-[0.98] shadow-gold/20'}`}
+                >
+                  {verificationSent ? (
+                    <span className="flex items-center justify-center gap-2"><Check className="w-4 h-4" /> Link Sent</span>
+                  ) : (
+                    'Send Verification Link'
+                  )}
+                </button>
+                <button 
+                  onClick={handleLogout}
+                  className="w-full py-4 rounded-2xl border border-line text-text-muted font-bold uppercase tracking-widest text-xs hover:bg-white/5 transition-all"
+                >
+                  Sign Out
+                </button>
+              </div>
+              
+              <p className="mt-8 text-[11px] text-text-muted italic">
+                Please check your inbox (and spam folder) for the confirmation link. You may need to refresh the page after verifying.
+              </p>
+            </motion.div>
+          </div>
+        )}
+        {isNotAllowed && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-bg-base/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="max-w-md w-full glass p-10 rounded-[3rem] border-red-500/30 shadow-2xl text-center"
+            >
+              <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-8 border border-red-500/20 shadow-inner">
+                <XCircle className="w-10 h-10 text-red-500" />
+              </div>
+              <h2 className="text-3xl font-serif text-text-gold mb-4 gold-text-glow">Access Denied</h2>
+              <p className="text-text-muted mb-10 leading-relaxed text-sm">
+                Your account (<span className="text-text-primary font-bold">{currentUser?.email}</span>) is not on the invited list. To consult the Arbiter, please contact your administrator for access.
+              </p>
+              
+              <button 
+                onClick={handleLogout}
+                className="w-full py-4 rounded-2xl bg-gold text-bg-base font-bold uppercase tracking-widest text-xs hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-gold/20"
+              >
+                Sign Out
               </button>
             </motion.div>
           </div>
