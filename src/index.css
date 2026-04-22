@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-@theme {
+:root {
+  /* Default: Dark Theme */
   --color-gold: #d4af37;
   --color-gold-bright: #f4d03f;
   --color-gold-muted: rgba(212, 175, 55, 0.15);
@@ -16,6 +17,42 @@
   --color-text-muted: #8d8d99;
   
   --color-line: #2d3139;
+}
+
+.light-theme {
+  --color-gold: #c5a028;
+  --color-gold-bright: #e4c03f;
+  --color-gold-muted: rgba(197, 160, 40, 0.1);
+  --color-gold-border: rgba(197, 160, 40, 0.2);
+
+  --color-bg-base: #f8fafc;
+  --color-bg-sidebar: #f1f5f9;
+  --color-bg-surface: #ffffff;
+  --color-bg-chat: #f8fafc;
+  
+  --color-text-primary: #1e293b;
+  --color-text-gold: #92400e;
+  --color-text-muted: #64748b;
+  
+  --color-line: #e2e8f0;
+}
+
+@theme {
+  --color-gold: var(--color-gold);
+  --color-gold-bright: var(--color-gold-bright);
+  --color-gold-muted: var(--color-gold-muted);
+  --color-gold-border: var(--color-gold-border);
+  
+  --color-bg-base: var(--color-bg-base);
+  --color-bg-sidebar: var(--color-bg-sidebar);
+  --color-bg-surface: var(--color-bg-surface);
+  --color-bg-chat: var(--color-bg-chat);
+  
+  --color-text-primary: var(--color-text-primary);
+  --color-text-gold: var(--color-text-gold);
+  --color-text-muted: var(--color-text-muted);
+  
+  --color-line: var(--color-line);
   
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-serif: "Playfair Display", "Georgia", serif;

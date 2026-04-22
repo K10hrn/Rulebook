@@ -153,6 +153,16 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (findLogoLimit) {
+      timer = setTimeout(() => {
+        setFindLogoLimit(false);
+      }, 60000);
+    }
+    return () => clearTimeout(timer);
+  }, [findLogoLimit]);
+
   const loadLibrary = async (token?: string) => {
     setIsSyncing(true);
     try {
@@ -845,7 +855,7 @@ export default function App() {
                     </h3>
                     <p className="text-[10px] text-text-muted mt-1">Select a title to consult the Arbiter</p>
                   </div>
-                  <span className="px-2 py-1 rounded bg-gold/10 border border-gold/20 text-[9px] text-gold font-bold">{library.length} RULEBOOKS</span>
+                  <span className="px-2 py-1 rounded bg-gold/10 border border-gold/20 text-[9px] text-gold font-bold">{library.length} Rulebooks</span>
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 overflow-y-auto pr-2 max-h-[600px] custom-scrollbar pb-10">
