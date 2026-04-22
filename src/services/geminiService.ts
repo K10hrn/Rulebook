@@ -11,13 +11,19 @@ export class RulebookService {
   private ai: GoogleGenAI;
   private pdfData: { data: string; mimeType: string } | null = null;
   private chatHistory: Message[] = [];
+  private houseRules: string = "";
 
   constructor() {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn("GEMINI_API_KEY is missing from the environment. AI features will not work until this is configured.");
-    }
-    this.ai = new GoogleGenAI({ apiKey: apiKey || "" });
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
+    this.ai = new GoogleGenAI({ apiKey });
+  }
+
+  updateApiKey(newKey: string) {
+    this.ai = new GoogleGenAI({ apiKey: newKey });
+  }
+
+  setHouseRules(rules: string) {
+    this.houseRules = rules;
   }
 
   setPDF(base64Data: string, mimeType: string = "application/pdf") {
@@ -41,10 +47,14 @@ export class RulebookService {
           parts: [{ text: msg.content }]
         }));
 
+        const houseRulesSection = this.houseRules 
+          ? `\n\nADDITIONAL HOUSE RULES/CONTEXT:\n${this.houseRules}\n\nPlease prioritize these house rules if they conflict with the official rulebook.` 
+          : "";
+
         const parts = isFirstMessage 
           ? [
               { inlineData: this.pdfData },
-              { text: `You are the lead Board Game Arbiter. I have provided the official rules. Your goal is to provide precise, final rulings based strictly on the text provided. If a rule is ambiguous, interpret it based on the game's intent as found in the text. If the information isn't there, state that the Arbiter cannot find a ruling in the provided text. \n\nRuling requested: ${question}` }
+              { text: `You are the lead Board Game Arbiter. I have provided the official rules. Your goal is to provide precise, final rulings based strictly on the text provided. If a rule is ambiguous, interpret it based on the game's intent as found in the text.${houseRulesSection} \n\nIf the information isn't there, state that the Arbiter cannot find a ruling in the provided text. \n\nRuling requested: ${question}` }
             ]
           : [{ text: question }];
 

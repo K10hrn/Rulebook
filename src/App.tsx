@@ -118,6 +118,7 @@ export default function App() {
   const [streamingMessage, setStreamingMessage] = useState('');
   const [driveToken, setDriveToken] = useState<string | null>(null);
   const [activeGameId, setActiveGameId] = useState<string | null>(null);
+  const [userApiKey, setUserApiKey] = useState<string>('');
   const [isEmailUnverified, setIsEmailUnverified] = useState(false);
   const [isNotAllowed, setIsNotAllowed] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
@@ -152,6 +153,7 @@ export default function App() {
   }, [theme]);
   const [manageName, setManageName] = useState('');
   const [manageLogo, setManageLogo] = useState('');
+  const [manageHouseRules, setManageHouseRules] = useState('');
   const [isFindingLogo, setIsFindingLogo] = useState(false);
   const [findLogoError, setFindLogoError] = useState(false);
   const [findLogoLimit, setFindLogoLimit] = useState(false);
@@ -180,6 +182,12 @@ export default function App() {
   useEffect(() => {
     // Sync logic: When user logs in/out, reload the library
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      const savedKey = localStorage.getItem('user_gemini_api_key');
+      if (savedKey) {
+        setUserApiKey(savedKey);
+        rulebookService.updateApiKey(savedKey);
+      }
+
       if (user) {
         setCurrentUser(user);
         if (!user.emailVerified) {
@@ -348,6 +356,17 @@ export default function App() {
     }
   };
 
+  const handleSaveUserApiKey = (key: string) => {
+    const trimmed = key.trim();
+    setUserApiKey(trimmed);
+    localStorage.setItem('user_gemini_api_key', trimmed);
+    rulebookService.updateApiKey(trimmed);
+    if (trimmed) {
+      alert("API Key saved! The Arbiter will now use your personal quota.");
+    } else {
+      alert("API Key cleared. The Arbiter will revert to the default shared quota.");
+    }
+  };
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -421,6 +440,7 @@ export default function App() {
     setManagingGame(game);
     setManageName(game.name);
     setManageLogo(game.iconUrl || '');
+    setManageHouseRules(game.houseRules || '');
   };
 
   const handleMagicLogo = async () => {
@@ -455,7 +475,8 @@ export default function App() {
     // Background the actual update but close modal instantly
     const updates = {
       name: manageName.trim(),
-      iconUrl: manageLogo.trim() || undefined
+      iconUrl: manageLogo.trim() || undefined,
+      houseRules: manageHouseRules.trim() || undefined
     };
     const gameId = managingGame.id;
     const currentDriveToken = driveToken;
@@ -466,7 +487,8 @@ export default function App() {
       if (currentDriveToken) {
         await updateFullMetadataInDrive(currentDriveToken, gameId, {
           name: updates.name,
-          iconUrl: updates.iconUrl
+          iconUrl: updates.iconUrl,
+          houseRules: updates.houseRules
         });
         loadLibrary(currentDriveToken);
       } else {
@@ -527,6 +549,7 @@ export default function App() {
         base64 = await getBase64FromUint8Array(game.data);
       }
       
+      rulebookService.setHouseRules(game.houseRules || '');
       rulebookService.setPDF(base64);
       setFile({ name: game.name, size: game.size });
       setActiveGameId(game.id);
@@ -568,8 +591,8 @@ export default function App() {
     setStreamingMessage('');
 
     try {
-      if (!process.env.GEMINI_API_KEY) {
-        setMessages(prev => [...prev, { role: 'model', content: "⚠️ **Arbiter Key Missing**: The Gemini API key hasn't been configured for this deployment. Please set the `GEMINI_API_KEY` secret in your GitHub repository and re-deploy." }]);
+      if (!process.env.GEMINI_API_KEY && !userApiKey) {
+        setMessages(prev => [...prev, { role: 'model', content: "⚠️ **Arbiter Key Missing**: Please set your personal Gemini API key in **About > AI Costs & Quotas** to use the Arbiter." }]);
         setIsGenerating(false);
         return;
       }
@@ -1283,9 +1306,31 @@ export default function App() {
                     <div className="w-8 h-8 rounded-full bg-line/20 flex items-center justify-center shrink-0 mt-1">
                       <Zap className="w-4 h-4 text-text-gold" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-white font-medium mb-1">AI Costs & Quotas</p>
-                      <p className="text-xs">The brain power (Gemini AI) is provided through the creator's API project. Because I pay for the tokens (words) processed, there are small rate limits to ensure the service remains free for everyone.</p>
+                      <p className="text-xs mb-4">The brain power (Gemini AI) is provided through the creator's API project. Because I pay for the tokens (words) processed, there are small rate limits to ensure the service remains free for everyone.</p>
+                      
+                      <div className="p-4 bg-black/20 rounded-xl border border-white/5 space-y-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gold/80">Support the Arbiter: Provide your own key</p>
+                        <div className="flex gap-2">
+                          <input 
+                            type="password"
+                            placeholder="Enter your Gemini API Key..."
+                            value={userApiKey}
+                            onChange={(e) => setUserApiKey(e.target.value)}
+                            className="flex-1 bg-bg-base border border-line rounded-lg px-3 py-2 text-xs focus:border-gold/50 outline-none transition-all placeholder:opacity-30"
+                          />
+                          <button 
+                            onClick={() => handleSaveUserApiKey(userApiKey)}
+                            className="bg-gold text-bg-base px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all"
+                          >
+                            Save
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-[#8d8d99]">
+                          Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-gold underline">Google AI Studio</a>. Using your own key removes shared rate limits.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1390,6 +1435,19 @@ export default function App() {
                     ) : (
                       "✨ Hit the sparkles to fetch the official logo from BoardGameGeek."
                     )}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest text-text-muted mb-2 block font-bold">House Rules & Additional Context</label>
+                  <textarea 
+                    value={manageHouseRules}
+                    onChange={e => setManageHouseRules(e.target.value)}
+                    className="w-full bg-bg-base border border-line rounded-xl px-4 py-3 text-sm focus:border-gold/50 outline-none transition-all min-h-[120px] resize-none custom-scrollbar"
+                    placeholder="Enter custom house rules, eratta, or specific instructions for the Arbiter..."
+                  />
+                  <p className="text-[9px] text-text-muted mt-2 pl-1 leading-relaxed">
+                    💡 The Arbiter will prioritize these instructions over the official rulebook if a conflict arises.
                   </p>
                 </div>
 

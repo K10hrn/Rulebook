@@ -8,6 +8,7 @@ export interface LocalGame {
   data: Uint8Array; // The actual PDF data
   iconUrl?: string; // Optional custom icon
   lastUsed?: number; // Last access timestamp
+  houseRules?: string; // Custom instructions/context
 }
 
 const STORAGE_KEY_PREFIX = 'rulebook_';
@@ -64,13 +65,14 @@ export async function updateRulebookIconLocally(id: string, iconUrl: string) {
   }
 }
 
-export async function updateRulebookMetadataLocally(id: string, updates: { name?: string, iconUrl?: string, lastUsed?: number }) {
+export async function updateRulebookMetadataLocally(id: string, updates: { name?: string, iconUrl?: string, lastUsed?: number, houseRules?: string }) {
   const key = `${STORAGE_KEY_PREFIX}${id}`;
   const game = await get<LocalGame>(key);
   if (game) {
     if (updates.name) game.name = updates.name;
     if (updates.iconUrl !== undefined) game.iconUrl = updates.iconUrl;
     if (updates.lastUsed !== undefined) game.lastUsed = updates.lastUsed;
+    if (updates.houseRules !== undefined) game.houseRules = updates.houseRules;
     await set(key, game);
   }
 }

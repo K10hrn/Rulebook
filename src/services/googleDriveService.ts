@@ -122,7 +122,7 @@ export async function renameInDrive(accessToken: string, fileId: string, newName
  * Updates the icon URL in Drive (stored in description).
  * We store it as a JSON string to keep things tidy.
  */
-export async function updateMetadataInDrive(accessToken: string, fileId: string, updates: { iconUrl?: string, lastUsed?: number }): Promise<void> {
+export async function updateMetadataInDrive(accessToken: string, fileId: string, updates: { iconUrl?: string, lastUsed?: number, houseRules?: string }): Promise<void> {
   // 1. Get existing description first to merge
   const getResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=description`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -161,11 +161,11 @@ export async function updateIconInDrive(accessToken: string, fileId: string, ico
   return updateMetadataInDrive(accessToken, fileId, { iconUrl });
 }
 
-export async function updateFullMetadataInDrive(accessToken: string, fileId: string, updates: { name?: string, iconUrl?: string, lastUsed?: number }): Promise<void> {
+export async function updateFullMetadataInDrive(accessToken: string, fileId: string, updates: { name?: string, iconUrl?: string, lastUsed?: number, houseRules?: string }): Promise<void> {
   const body: any = {};
   if (updates.name) body.name = updates.name;
   
-  if (updates.iconUrl !== undefined || updates.lastUsed !== undefined) {
+  if (updates.iconUrl !== undefined || updates.lastUsed !== undefined || updates.houseRules !== undefined) {
     // 1. Get existing description first to merge
     const getResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=description`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
