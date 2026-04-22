@@ -117,13 +117,25 @@ export default function App() {
   const [hasLocalGames, setHasLocalGames] = useState(false);
   const [isSyncingLocalToCloud, setIsSyncingLocalToCloud] = useState(false);
   const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
 
   useEffect(() => {
-    localStorage.setItem('theme', theme);
+    try {
+      localStorage.setItem('theme', theme);
+    } catch (e) {
+      console.warn('LocalStorage blocked, theme will not persist');
+    }
     if (theme === 'light') {
+      document.body.classList.add('light-theme');
       document.documentElement.classList.add('light-theme');
     } else {
+      document.body.classList.remove('light-theme');
       document.documentElement.classList.remove('light-theme');
     }
   }, [theme]);
@@ -343,7 +355,6 @@ export default function App() {
     } catch (err: any) {
       if (err.message === 'RATE_LIMIT') {
         setFindLogoLimit(true);
-        setTimeout(() => setFindLogoLimit(false), 5000);
       } else {
         console.error("Magic logo failed:", err);
         setFindLogoError(true);
@@ -851,7 +862,7 @@ export default function App() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex flex-col">
                     <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-text-gold gold-text-glow flex items-center gap-2">
-                      <Library className="w-4 h-4" /> Saved Games Library
+                      <Library className="w-4 h-4" /> Rulebook Library
                     </h3>
                     <p className="text-[10px] text-text-muted mt-1">Select a title to consult the Arbiter</p>
                   </div>

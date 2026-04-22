@@ -16,8 +16,6 @@ export class RulebookService {
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       console.warn("GEMINI_API_KEY is missing from the environment. AI features will not work until this is configured.");
-    } else {
-      console.log(`Arbiter Engine initialized with key (length: ${apiKey.length})`);
     }
     this.ai = new GoogleGenAI({ apiKey: apiKey || "" });
   }
