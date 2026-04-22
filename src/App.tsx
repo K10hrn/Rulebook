@@ -927,81 +927,86 @@ export default function App() {
               <div className="flex flex-col gap-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-line pb-6 gap-6">
                   <div className="flex flex-col">
-                    <h3 className="text-xl font-serif text-text-gold gold-text-glow flex items-center gap-3">
-                      <Library className="w-6 h-6" /> The Global Archive
-                    </h3>
-                    <p className="text-sm text-text-muted mt-1 italic">Knowledge catalogued for your consultation</p>
-                  </div>
-
-                  {isAdmin && (
-                    <div className="flex-1 max-w-xl mx-auto md:mx-0">
-                      <div className="glass p-1.5 rounded-full border-gold/20 flex items-center gap-2 pr-4 bg-gold/5">
-                        <div className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center border border-gold/20 ml-1">
-                          <ShieldCheck className="w-4 h-4 text-gold" />
-                        </div>
-                        <input 
-                          type="email"
-                          placeholder="Invite by email..."
-                          className="flex-1 bg-transparent border-none text-xs focus:ring-0 text-text-primary placeholder:text-text-muted/50"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleAddToAllowList((e.target as HTMLInputElement).value, isInviteAdmin);
-                              (e.target as HTMLInputElement).value = '';
-                            }
-                          }}
-                        />
-                        <div className="flex items-center gap-2 px-3 border-l border-gold/10">
-                          <input 
-                            type="checkbox" 
-                            id="admin-rights" 
-                            checked={isInviteAdmin}
-                            onChange={(e) => setIsInviteAdmin(e.target.checked)}
-                            className="w-3.5 h-3.5 rounded border-gold/30 text-gold focus:ring-gold/50 bg-transparent"
-                          />
-                          <label htmlFor="admin-rights" className="text-[9px] uppercase tracking-wider text-text-muted font-bold select-none cursor-pointer hover:text-gold transition-colors">
-                            Admin rights
-                          </label>
-                        </div>
-                        <button 
-                          onClick={(e) => {
-                            const input = e.currentTarget.parentElement?.querySelector('input[type="email"]') as HTMLInputElement;
-                            if (input && input.value) {
-                              handleAddToAllowList(input.value, isInviteAdmin);
-                              input.value = '';
-                            }
-                          }}
-                          className="text-[10px] font-bold text-gold uppercase tracking-widest hover:text-white transition-colors"
-                        >
-                          Invite
-                        </button>
-                      </div>
+                      <h3 className="text-xl font-serif text-text-gold gold-text-glow flex items-center gap-3">
+                        <Library className="w-6 h-6" /> The Global Archive
+                      </h3>
+                      <p className="text-sm text-text-muted mt-1 italic">Knowledge catalogued for your consultation</p>
                     </div>
-                  )}
 
-                  <div className="flex items-center gap-4">
-                    <span className="hidden sm:inline-block px-3 py-1.5 rounded-full bg-gold/10 border border-gold/20 text-[10px] text-gold font-bold tracking-widest uppercase">
-                      {library.length} Rulebook{library.length !== 1 ? 's' : ''}
-                    </span>
                     {isAdmin && (
-                      <>
-                        <button 
-                          onClick={() => fileInputRef.current?.click()}
-                          className="bg-gold text-bg-base px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-gold/20"
-                        >
-                          + Summon Arbiter
-                        </button>
-                        <input 
-                          type="file" 
-                          className="hidden" 
-                          ref={fileInputRef} 
-                          onChange={handleFileChange}
-                          accept=".pdf"
-                        />
-                      </>
+                      <div className="w-full md:flex-1 md:max-w-xl">
+                        <div className="glass p-2 md:p-1.5 rounded-2xl md:rounded-full border-gold/20 flex flex-col sm:flex-row items-center gap-3 md:gap-2 pr-4 bg-gold/5">
+                          <div className="flex items-center gap-2 w-full sm:w-auto flex-1">
+                            <div className="w-8 h-8 shrink-0 rounded-full bg-gold/10 flex items-center justify-center border border-gold/20 ml-1">
+                              <ShieldCheck className="w-4 h-4 text-gold" />
+                            </div>
+                            <input 
+                              type="email"
+                              placeholder="Invite by email..."
+                              className="flex-1 bg-transparent border-none text-xs focus:ring-0 text-text-primary placeholder:text-text-muted/50 min-w-0"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleAddToAllowList((e.target as HTMLInputElement).value, isInviteAdmin);
+                                  (e.target as HTMLInputElement).value = '';
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-start gap-4 w-full sm:w-auto sm:pl-3 sm:border-l border-gold/10">
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="checkbox" 
+                                id="admin-rights" 
+                                checked={isInviteAdmin}
+                                onChange={(e) => setIsInviteAdmin(e.target.checked)}
+                                className="w-3.5 h-3.5 rounded border-gold/30 text-gold focus:ring-gold/50 bg-transparent"
+                              />
+                              <label htmlFor="admin-rights" className="text-[9px] uppercase tracking-wider text-text-muted font-bold select-none cursor-pointer hover:text-gold transition-colors">
+                                Admin
+                              </label>
+                            </div>
+                            <button 
+                              onClick={(e) => {
+                                const container = e.currentTarget.closest('.glass');
+                                const input = container?.querySelector('input[type="email"]') as HTMLInputElement;
+                                if (input && input.value) {
+                                  handleAddToAllowList(input.value, isInviteAdmin);
+                                  input.value = '';
+                                }
+                              }}
+                              className="text-[10px] font-bold text-gold uppercase tracking-widest hover:text-white transition-colors"
+                            >
+                              Invite
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     )}
+
+                    <div className="flex items-center justify-center md:justify-end gap-3 md:gap-4 w-full md:w-auto">
+                      <span className="px-3 py-1.5 rounded-full bg-gold/10 border border-gold/20 text-[10px] text-gold font-bold tracking-widest uppercase">
+                        {library.length} Rulebook{library.length !== 1 ? 's' : ''}
+                      </span>
+                      {isAdmin && (
+                        <>
+                          <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="bg-gold text-bg-base px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-gold/20 whitespace-nowrap"
+                          >
+                            + Summon Arbiter
+                          </button>
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            ref={fileInputRef} 
+                            onChange={handleFileChange}
+                            accept=".pdf"
+                          />
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-                
+
                 {library.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     <AnimatePresence>
