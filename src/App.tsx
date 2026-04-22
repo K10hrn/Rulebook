@@ -348,6 +348,15 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      resetOracle();
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
+
   const processFile = async (selectedFile: File) => {
     setIsUploading(true);
     const now = Date.now();
