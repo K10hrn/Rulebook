@@ -69,5 +69,10 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
     }
+
+    match /allowlist/{email} {
+      allow get: if isVerified() && (request.auth.token.email == email || isAdmin());
+      allow write: if isAdmin();
+    }
   }
 }
