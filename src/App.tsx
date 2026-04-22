@@ -63,15 +63,12 @@ import {
   getBase64FromUint8Array
 } from './services/localRulebookStorage';
 import { 
-  fetchFromDrive, 
-  uploadToDrive, 
-  downloadFromDrive, 
-  deleteFromDrive,
-  renameInDrive,
-  updateIconInDrive,
-  updateFullMetadataInDrive,
-  DriveFileMetadata 
-} from './services/googleDriveService';
+  fetchGlobalLibrary, 
+  saveRulebookToGlobal, 
+  downloadFromGlobal, 
+  deleteFromGlobal, 
+  updateGlobalMetadata 
+} from './services/firestoreRulebookStorage';
 import { rulebookService, Message } from './services/geminiService';
 
 interface GameIconProps {
@@ -116,7 +113,9 @@ export default function App() {
   const [inputValue, setInputValue] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
-  const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [sessionHouseRules, setSessionHouseRules] = useState('');
+  const [isSessionRulesOpen, setIsSessionRulesOpen] = useState(false);
+  const [isInviteAdmin, setIsInviteAdmin] = useState(false);
   const [activeGameId, setActiveGameId] = useState<string | null>(null);
   const [userApiKey, setUserApiKey] = useState<string>('');
   const [isEmailUnverified, setIsEmailUnverified] = useState(false);
@@ -124,8 +123,6 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [hasLocalGames, setHasLocalGames] = useState(false);
-  const [isSyncingLocalToCloud, setIsSyncingLocalToCloud] = useState(false);
   const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -163,18 +160,35 @@ export default function App() {
 
   const isAllowedUser = async (user: FirebaseUser) => {
     const adminEmail = 'kellyellen.kenyon@gmail.com';
-    if (user.email === adminEmail) {
-      setIsAdmin(true);
-      return true;
-    }
     
-    setIsAdmin(false);
     try {
       const allowRef = doc(db, 'allowlist', user.email || '');
       const docSnap = await getDoc(allowRef);
-      return docSnap.exists();
+      
+      if (user.email === adminEmail) {
+        setIsAdmin(true);
+        setIsNotAllowed(false);
+        return true;
+      }
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setIsAdmin(data.role === 'admin');
+        setIsNotAllowed(false);
+        return true;
+      }
+      
+      setIsAdmin(false);
+      setIsNotAllowed(true);
+      return false;
     } catch (e) {
-      // If we can't even check, they are likely not allowed due to rule denying read
+      // Fallback for primary admin if firestore fails
+      if (user.email === adminEmail) {
+        setIsAdmin(true);
+        setIsNotAllowed(false);
+        return true;
+      }
+      setIsNotAllowed(true);
       return false;
     }
   };
@@ -192,32 +206,25 @@ export default function App() {
         setCurrentUser(user);
         if (!user.emailVerified) {
           setIsEmailUnverified(true);
-          setDriveToken(null);
         } else {
           setIsEmailUnverified(false);
-          const allowed = await isAllowedUser(user);
-          if (!allowed) {
-            setIsNotAllowed(true);
-            setDriveToken(null);
-          } else {
-            setIsNotAllowed(false);
-          }
+          await isAllowedUser(user);
         }
       } else {
         setIsEmailUnverified(false);
         setIsNotAllowed(false);
         setIsAdmin(false);
         setCurrentUser(null);
-        setDriveToken(null);
-        loadLibrary(); // Fallback to local
       }
       setAuthLoading(false);
     });
 
-    loadLibrary();
-
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    loadLibrary();
+  }, [currentUser, isEmailUnverified, isNotAllowed]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -229,82 +236,22 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [findLogoLimit]);
 
-  const loadLibrary = async (token?: string) => {
+  const loadLibrary = async () => {
     setIsSyncing(true);
     try {
-      // Always check for local games to see if we need to offer a sync
-      const localGames = await fetchLocalLibrary();
-      setHasLocalGames(localGames.length > 0);
-
-      if (token) {
-        const driveGames = await fetchFromDrive(token);
-        // Map Drive metadata to our UI format
-        const games: LocalGame[] = driveGames.map(f => {
-          let iconUrl = f.description;
-          let lastUsed = 0;
-          
-          try {
-            const meta = JSON.parse(f.description || '{}');
-            iconUrl = meta.iconUrl || iconUrl;
-            lastUsed = meta.lastUsed || 0;
-          } catch {
-            // Keep iconUrl as raw description if parse fails
-          }
-
-          return {
-            id: f.id,
-            name: f.name,
-            size: Number(f.size),
-            date: new Date(f.createdTime).getTime(),
-            data: new Uint8Array(), // Data is fetched on-demand for Drive files
-            iconUrl,
-            lastUsed
-          };
-        });
-        setLibrary(games);
+      // If allowed, fetch from Global Firestore database
+      if (currentUser && !isNotAllowed && !isEmailUnverified) {
+        const globalGames = await fetchGlobalLibrary();
+        setLibrary(globalGames);
       } else {
+        // Fallback or empty if guest
+        const localGames = await fetchLocalLibrary();
         setLibrary(localGames);
       }
     } catch (err) {
       console.error("Failed to load library:", err);
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  const syncLocalToDrive = async () => {
-    if (!driveToken) return;
-    setIsSyncingLocalToCloud(true);
-    try {
-      const localGames = await fetchLocalLibrary();
-      for (const game of localGames) {
-        // Create a File-like object from the local data
-        const blob = new Blob([game.data], { type: 'application/pdf' });
-        const fileObj = new File([blob], game.name, { type: 'application/pdf' });
-        
-        // 1. Upload the file
-        const driveFile = await uploadToDrive(driveToken, fileObj);
-        
-        // 2. Upload metadata (icon)
-        if (game.iconUrl) {
-          await updateIconInDrive(driveToken, driveFile.id, game.iconUrl);
-        }
-        
-        // 3. Delete locally after successful cloud push
-        await deleteRulebookLocally(game.id);
-      }
-      
-      // Refresh library
-      await loadLibrary(driveToken);
-      setMessages(prev => [
-        ...prev,
-        { role: 'model', content: `✨ **Migration Complete!** I've synced ${localGames.length} rulebooks from your local storage to your Google Drive.` }
-      ]);
-    } catch (err) {
-      console.error("Sync failed:", err);
-      alert("Cloud Sync failed. Please ensure you have sufficient Drive space.");
-    } finally {
-      setIsSyncingLocalToCloud(false);
     }
   };
 
@@ -322,7 +269,6 @@ export default function App() {
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
-    provider.addScope('https://www.googleapis.com/auth/drive.file');
     
     try {
       const result = await signInWithPopup(auth, provider);
@@ -330,26 +276,21 @@ export default function App() {
         setIsEmailUnverified(true);
         return;
       }
-      
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        const token = credential.accessToken;
-        setDriveToken(token);
-        await loadLibrary(token);
-      }
+      // Authorization is handled by useEffect listening to auth state
     } catch (err) {
       console.error("Login failed:", err);
     }
   };
 
-  const handleAddToAllowList = async (email: string) => {
+  const handleAddToAllowList = async (email: string, makeAdmin: boolean = false) => {
     if (!isAdmin) return;
     try {
       await setDoc(doc(db, 'allowlist', email.toLowerCase().trim()), {
+        role: makeAdmin ? 'admin' : 'sage',
         addedAt: Date.now(),
         addedBy: currentUser?.email
       });
-      alert(`Access granted to ${email}`);
+      alert(`${makeAdmin ? 'Admin' : 'Access'} granted to ${email}`);
     } catch (err) {
       console.error("Failed to add to allowlist:", err);
       alert("Error adding user to access list.");
@@ -377,44 +318,25 @@ export default function App() {
   };
 
   const processFile = async (selectedFile: File) => {
-    setIsUploading(true);
-    const now = Date.now();
-    try {
-      if (driveToken) {
-        // Cloud Sync: Upload to Drive
-        const driveFile = await uploadToDrive(driveToken, selectedFile);
-        if (driveToken && driveFile.id) {
-          await updateFullMetadataInDrive(driveToken, driveFile.id, { lastUsed: now });
-        }
-        
-        // Prepare for current session (local read)
-        const arrayBuffer = await selectedFile.arrayBuffer();
-        const base64Data = await getBase64FromUint8Array(new Uint8Array(arrayBuffer));
-        rulebookService.setPDF(base64Data);
+    if (!isAdmin) {
+      setMessages(prev => [...prev, { role: 'model', content: "⚠️ **Access Restricted**: Only the Master Admin can summon new rulebooks to the Global Archive." }]);
+      return;
+    }
 
-        setFile({ name: driveFile.name, size: Number(driveFile.size) });
-        setIsActive(true);
-        setMessages([
-          { role: 'model', content: `The Arbiter has synced **${driveFile.name}** to your Google Drive. It is now available on all your devices.` }
-        ]);
-        
-        loadLibrary(driveToken);
-      } else {
-        // Local Only
-        const localGame = await saveRulebookLocally(selectedFile);
-        const base64Data = await getBase64FromUint8Array(localGame.data);
-        rulebookService.setPDF(base64Data);
-        
-        setFile({ name: localGame.name, size: localGame.size });
-        setIsActive(true);
-        setMessages([
-          { role: 'model', content: `The Arbiter has indexed **${localGame.name}** to your local library. (Note: Sign in to sync this game across devices).` }
-        ]);
-        loadLibrary();
-      }
+    setIsUploading(true);
+    try {
+      // Centralized Upload to Firestore (Global Archive)
+      const gameId = await saveRulebookToGlobal(selectedFile);
+      
+      setIsActive(false); // Stay in library to show success
+      setMessages([
+        { role: 'model', content: `The Arbiter has catalogued **${selectedFile.name}** into the Global Archive. It is now accessible to all authorizedConsultants.` }
+      ]);
+      
+      loadLibrary();
     } catch (err) {
-      console.error("Upload failed:", err);
-      alert("Failed to process rulebook. Ensure the Drive API is enabled for your project.");
+      console.error("Archive upload failed:", err);
+      alert("Failed to archive rulebook. (Possible permissions error or database limit reached)");
     } finally {
       setIsUploading(false);
     }
@@ -422,16 +344,13 @@ export default function App() {
 
   const deleteFromLibrary = async (gameId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!isAdmin) return;
+
     try {
-      if (driveToken) {
-        await deleteFromDrive(driveToken, gameId);
-        loadLibrary(driveToken);
-      } else {
-        await deleteRulebookLocally(gameId);
-        loadLibrary();
-      }
+      await deleteFromGlobal(gameId);
+      loadLibrary();
     } catch (err) {
-      console.error("Delete failed:", err);
+      console.error("Global delete failed:", err);
     }
   };
 
@@ -470,44 +389,28 @@ export default function App() {
   };
 
   const handleSaveMetadata = async () => {
-    if (!managingGame) return;
+    if (!managingGame || !isAdmin) return;
 
-    // Background the actual update but close modal instantly
     const updates = {
       name: manageName.trim(),
       iconUrl: manageLogo.trim() || undefined,
       houseRules: manageHouseRules.trim() || undefined
     };
     const gameId = managingGame.id;
-    const currentDriveToken = driveToken;
 
     setManagingGame(null); // Close modal immediately
 
     try {
-      if (currentDriveToken) {
-        await updateFullMetadataInDrive(currentDriveToken, gameId, {
-          name: updates.name,
-          iconUrl: updates.iconUrl,
-          houseRules: updates.houseRules
-        });
-        loadLibrary(currentDriveToken);
-      } else {
-        await updateRulebookMetadataLocally(gameId, updates);
-        loadLibrary();
-      }
+      await updateGlobalMetadata(gameId, updates);
+      loadLibrary();
     } catch (err) {
-      console.error("Background metadata update failed:", err);
+      console.error("Global metadata update failed:", err);
     }
   };
 
   const viewRulebook = async (game: LocalGame) => {
     try {
-      let base64 = '';
-      if (driveToken && game.data.length === 0) {
-        base64 = await downloadFromDrive(driveToken, game.id);
-      } else {
-        base64 = await getBase64FromUint8Array(game.data);
-      }
+      const base64 = await downloadFromGlobal(game.id);
       const binaryString = window.atob(base64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
@@ -528,28 +431,20 @@ export default function App() {
     setStreamingMessage('');
     setMessages([]);
     
-    // Update last used
+    // Update last used (global)
     const now = Date.now();
-    if (driveToken && game.id) {
-      updateFullMetadataInDrive(driveToken, game.id, { lastUsed: now });
-    } else if (game.id) {
-      updateRulebookMetadataLocally(game.id, { lastUsed: now });
-    }
+    updateGlobalMetadata(game.id, { lastUsed: now });
     
     // Optimistic update
     setLibrary(prev => prev.map(g => g.id === game.id ? { ...g, lastUsed: now } : g));
 
-    let base64 = '';
     setIsUploading(true);
     try {
-      if (driveToken && game.data.length === 0) {
-        // Fetch data from Drive if it's not local
-        base64 = await downloadFromDrive(driveToken, game.id);
-      } else {
-        base64 = await getBase64FromUint8Array(game.data);
-      }
+      const base64 = await downloadFromGlobal(game.id);
       
       rulebookService.setHouseRules(game.houseRules || '');
+      rulebookService.setSessionHouseRules(''); // Reset session rules on new game
+      setSessionHouseRules('');
       rulebookService.setPDF(base64);
       setFile({ name: game.name, size: game.size });
       setActiveGameId(game.id);
@@ -560,7 +455,7 @@ export default function App() {
       ]);
     } catch (err) {
       console.error("Failed to load rulebook:", err);
-      alert("Could not retrieve file. Please try again.");
+      alert("Could not retrieve file from archive. Please try again.");
     } finally {
       setIsUploading(false);
     }
@@ -826,27 +721,15 @@ export default function App() {
                   <Library className="w-3 h-3" /> Game Shelf
                 </span>
                 <div className="flex items-center gap-2">
-                  {driveToken && (
-                    <button 
-                      onClick={() => loadLibrary(driveToken)}
-                      disabled={isSyncing}
-                      className="p-1 px-1.5 text-text-muted hover:text-gold transition-colors flex items-center gap-1 group"
-                      title="Reload library from cloud"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform'}`} />
-                      <span className="text-[9px] uppercase tracking-tighter hidden sm:inline">Refresh</span>
-                    </button>
-                  )}
-                  {hasLocalGames && driveToken && !isSyncingLocalToCloud && (
-                    <button 
-                      onClick={syncLocalToDrive}
-                      className="text-[9px] px-2 py-1 bg-gold/20 hover:bg-gold/30 text-gold rounded border border-gold/30 flex items-center gap-1 transition-colors animate-pulse"
-                      title="Move local rulebooks to your Google Drive"
-                    >
-                      <CloudUpload className="w-3 h-3" /> Sync
-                    </button>
-                  )}
-                  {isSyncingLocalToCloud && <Loader2 className="w-3 h-3 animate-spin text-gold" />}
+                  <button 
+                    onClick={() => loadLibrary()}
+                    disabled={isSyncing}
+                    className="p-1 px-1.5 text-text-muted hover:text-gold transition-colors flex items-center gap-1 group"
+                    title="Reload library"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform'}`} />
+                    <span className="text-[9px] uppercase tracking-tighter hidden sm:inline">Refresh</span>
+                  </button>
                   {isSyncing && <Loader2 className="w-3 h-3 animate-spin text-gold/50" />}
                 </div>
               </div>
@@ -886,20 +769,24 @@ export default function App() {
                           >
                             <Eye className="w-3 h-3" />
                           </button>
-                          <button 
-                            onClick={(e) => openManageModal(game, e)}
-                            className="p-1.5 text-text-muted hover:text-gold transition-colors"
-                            title="Manage Game"
-                          >
-                            <Settings className="w-3 h-3" />
-                          </button>
-                          <button 
-                            onClick={(e) => deleteFromLibrary(game.id, e)}
-                            className="p-1.5 text-text-muted hover:text-red-500 transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                          {isAdmin && (
+                            <>
+                              <button 
+                                onClick={(e) => openManageModal(game, e)}
+                                className="p-1.5 text-text-muted hover:text-gold transition-colors"
+                                title="Manage Game"
+                              >
+                                <Settings className="w-3 h-3" />
+                              </button>
+                              <button 
+                                onClick={(e) => deleteFromLibrary(game.id, e)}
+                                className="p-1.5 text-text-muted hover:text-red-500 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </motion.div>
@@ -926,7 +813,7 @@ export default function App() {
                 <div>
                   <p className="text-[11px] font-bold text-text-primary truncate max-w-[100px]">{currentUser.displayName || 'The Scribe'}</p>
                   <p className="text-[9px] text-text-gold uppercase tracking-widest opacity-60">
-                    {driveToken ? 'Cloud Sync On' : 'Session Active'}
+                    {isAdmin ? 'Arbiter Admin' : 'Verified Sage'}
                   </p>
                 </div>
               </div>
@@ -983,6 +870,16 @@ export default function App() {
               <span className="opacity-40 uppercase text-[8px] md:text-[10px] tracking-widest">Arbiter Ruling on</span> 
               <span className="text-text-gold font-serif italic truncate max-w-[120px] md:max-w-none">{file ? file.name : "Unbound Rules"}</span>
             </h2>
+            {isActive && (
+              <button 
+                onClick={() => setIsSessionRulesOpen(true)}
+                className="ml-2 p-1.5 glass rounded-lg border border-gold/20 text-gold hover:bg-gold/10 transition-all flex items-center gap-1.5"
+                title="Session Overrides"
+              >
+                <ListChecks className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline text-[9px] uppercase tracking-widest font-bold">Rules</span>
+              </button>
+            )}
           </div>
           
           <div className="flex items-center gap-1 md:gap-4">
@@ -1031,13 +928,13 @@ export default function App() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-line pb-6 gap-6">
                   <div className="flex flex-col">
                     <h3 className="text-xl font-serif text-text-gold gold-text-glow flex items-center gap-3">
-                      <Library className="w-6 h-6" /> Rulebook Library
+                      <Library className="w-6 h-6" /> The Global Archive
                     </h3>
                     <p className="text-sm text-text-muted mt-1 italic">Knowledge catalogued for your consultation</p>
                   </div>
 
                   {isAdmin && (
-                    <div className="flex-1 max-w-md mx-auto md:mx-0">
+                    <div className="flex-1 max-w-xl mx-auto md:mx-0">
                       <div className="glass p-1.5 rounded-full border-gold/20 flex items-center gap-2 pr-4 bg-gold/5">
                         <div className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center border border-gold/20 ml-1">
                           <ShieldCheck className="w-4 h-4 text-gold" />
@@ -1048,16 +945,28 @@ export default function App() {
                           className="flex-1 bg-transparent border-none text-xs focus:ring-0 text-text-primary placeholder:text-text-muted/50"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
-                              handleAddToAllowList((e.target as HTMLInputElement).value);
+                              handleAddToAllowList((e.target as HTMLInputElement).value, isInviteAdmin);
                               (e.target as HTMLInputElement).value = '';
                             }
                           }}
                         />
+                        <div className="flex items-center gap-2 px-3 border-l border-gold/10">
+                          <input 
+                            type="checkbox" 
+                            id="admin-rights" 
+                            checked={isInviteAdmin}
+                            onChange={(e) => setIsInviteAdmin(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded border-gold/30 text-gold focus:ring-gold/50 bg-transparent"
+                          />
+                          <label htmlFor="admin-rights" className="text-[9px] uppercase tracking-wider text-text-muted font-bold select-none cursor-pointer hover:text-gold transition-colors">
+                            Admin rights
+                          </label>
+                        </div>
                         <button 
                           onClick={(e) => {
-                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                            const input = e.currentTarget.parentElement?.querySelector('input[type="email"]') as HTMLInputElement;
                             if (input && input.value) {
-                              handleAddToAllowList(input.value);
+                              handleAddToAllowList(input.value, isInviteAdmin);
                               input.value = '';
                             }
                           }}
@@ -1073,19 +982,23 @@ export default function App() {
                     <span className="hidden sm:inline-block px-3 py-1.5 rounded-full bg-gold/10 border border-gold/20 text-[10px] text-gold font-bold tracking-widest uppercase">
                       {library.length} Rulebook{library.length !== 1 ? 's' : ''}
                     </span>
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="bg-gold text-bg-base px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-gold/20"
-                    >
-                      + Summon Arbiter
-                    </button>
-                    <input 
-                      type="file" 
-                      className="hidden" 
-                      ref={fileInputRef} 
-                      onChange={handleFileChange}
-                      accept=".pdf"
-                    />
+                    {isAdmin && (
+                      <>
+                        <button 
+                          onClick={() => fileInputRef.current?.click()}
+                          className="bg-gold text-bg-base px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-gold/20"
+                        >
+                          + Summon Arbiter
+                        </button>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          ref={fileInputRef} 
+                          onChange={handleFileChange}
+                          accept=".pdf"
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
                 
@@ -1124,19 +1037,36 @@ export default function App() {
                             </div>
                             <div className="flex items-center gap-2">
                               <button 
+                                onClick={(e) => { e.stopPropagation(); loadFromLibrary(game); }}
+                                className="px-4 py-1.5 bg-gold/10 hover:bg-gold/20 text-gold text-[10px] font-bold uppercase tracking-widest rounded-full border border-gold/20 transition-all flex items-center gap-2 whitespace-nowrap"
+                              >
+                                Consult Arbiter
+                              </button>
+                              <button 
                                 onClick={(e) => { e.stopPropagation(); viewRulebook(game); }}
                                 className="p-2 text-text-muted hover:text-text-primary transition-colors hover:bg-white/5 rounded-full"
                                 title="Open PDF"
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
-                              <button
-                                onClick={(e) => deleteFromLibrary(game.id, e)}
-                                className="p-2 text-text-muted hover:text-red-500 transition-colors hover:bg-red-500/5 rounded-full"
-                                title="Remove"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {isAdmin && (
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); openManageModal(game, e); }}
+                                    className="p-2 text-text-muted hover:text-gold transition-colors hover:bg-gold/5 rounded-full"
+                                    title="Edit Details"
+                                  >
+                                    <Settings className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => deleteFromLibrary(game.id, e)}
+                                    className="p-2 text-text-muted hover:text-red-500 transition-colors hover:bg-red-500/5 rounded-full"
+                                    title="Remove"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
                           
@@ -1147,14 +1077,15 @@ export default function App() {
                   </div>
                 ) : (
                   <div 
-                    onClick={() => !isUploading && fileInputRef.current?.click()}
-                    className="flex flex-col items-center justify-center py-32 border-2 border-dashed border-line/20 rounded-[3rem] opacity-40 hover:opacity-100 hover:border-gold/40 hover:bg-gold/5 transition-all cursor-pointer group"
+                    onClick={() => isAdmin && !isUploading && fileInputRef.current?.click()}
+                    className={`flex flex-col items-center justify-center py-32 border-2 border-dashed border-line/20 rounded-[3rem] opacity-40 transition-all ${isAdmin && !isUploading ? 'hover:opacity-100 hover:border-gold/40 hover:bg-gold/5 cursor-pointer group' : 'cursor-default'}`}
                   >
-                    <div className={`w-20 h-20 bg-gold/10 rounded-full flex items-center justify-center mb-6 border border-gold/20 group-hover:scale-110 transition-transform ${isUploading ? 'animate-pulse' : ''}`}>
+                    <div className={`w-20 h-20 bg-gold/10 rounded-full flex items-center justify-center mb-6 border border-gold/20 ${isAdmin ? 'group-hover:scale-110' : ''} transition-transform ${isUploading ? 'animate-pulse' : ''}`}>
                       <CloudUpload className="w-10 h-10 text-gold" />
                     </div>
-                    <p className="text-lg font-serif italic text-text-primary">{isUploading ? 'The Arbiter is indexing...' : 'Your library is waiting to be filled...'}</p>
-                    <p className="text-[10px] uppercase tracking-widest text-text-muted mt-2">Click or drag a Rulebook PDF to summon the Arbiter</p>
+                    <p className="text-lg font-serif italic text-text-primary">{isUploading ? 'The Arbiter is indexing...' : 'The Archive is empty...'}</p>
+                    {isAdmin && <p className="text-[10px] uppercase tracking-widest text-text-muted mt-2">Click or drag a Rulebook PDF to populate the Global Archive</p>}
+                    {!isAdmin && <p className="text-[10px] uppercase tracking-widest text-text-muted mt-2">The Master Arbiter has not yet catalogued any rulebooks.</p>}
                   </div>
                 )}
               </div>
@@ -1471,7 +1402,64 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Mobile Library Drawer */}
+      {/* Session Rules Modal */}
+      <AnimatePresence>
+        {isSessionRulesOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-lg glass rounded-[2.5rem] p-4 md:p-10 border border-gold/20 shadow-2xl relative"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gold/10 rounded-xl border border-gold/40 flex items-center justify-center">
+                    <ListChecks className="w-5 h-5 text-gold" />
+                  </div>
+                  <h3 className="text-xl font-serif text-text-gold tracking-tight">Session Rules Context</h3>
+                </div>
+                <button onClick={() => setIsSessionRulesOpen(false)} className="p-2 text-text-muted hover:text-white transition-colors">
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <p className="text-xs text-text-muted leading-relaxed">
+                  Add custom house rules or session-specific context. The Arbiter will prioritize these instructions over the official rulebook for <strong>this specific chat</strong>.
+                </p>
+                <textarea 
+                  value={sessionHouseRules}
+                  onChange={e => setSessionHouseRules(e.target.value)}
+                  className="w-full bg-bg-base border border-line rounded-xl px-4 py-3 text-sm focus:border-gold/50 outline-none transition-all min-h-[150px] resize-none custom-scrollbar"
+                  placeholder="Example: Tonight we are using the 'Expert Variant' rules from page 24. Also, we have a house rule that..."
+                />
+              </div>
+
+              <div className="mt-8 flex gap-3">
+                <button 
+                  onClick={() => setIsSessionRulesOpen(false)}
+                  className="flex-1 py-4 px-8 rounded-2xl border border-line text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-all text-text-muted"
+                >
+                  Discard
+                </button>
+                <button 
+                  onClick={() => {
+                    rulebookService.setSessionHouseRules(sessionHouseRules);
+                    setIsSessionRulesOpen(false);
+                    setMessages(prev => [...prev, { role: 'model', content: "📜 **Session Context Updated.** I have acknowledged your custom instructions and will apply them to all following rulings." }]);
+                  }}
+                  className="flex-1 py-4 px-8 rounded-2xl bg-gold text-bg-base font-bold uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-gold/20"
+                >
+                  Apply to Chat
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Gmail Login Modal (already exists below) */}
       <AnimatePresence>
         {isLibraryOpen && (
           <div className="fixed inset-0 z-[120] md:hidden">
@@ -1493,7 +1481,7 @@ export default function App() {
                   <div className="w-8 h-8 bg-gold/10 rounded-lg border border-gold/40 flex items-center justify-center">
                     <Library className="w-4 h-4 text-gold" />
                   </div>
-                  <h3 className="font-serif text-lg text-text-gold tracking-wide uppercase">Rulebook Library</h3>
+                  <h3 className="font-serif text-lg text-text-gold tracking-wide uppercase">The Global Archive</h3>
                 </div>
                 <button onClick={() => setIsLibraryOpen(false)} className="p-2 text-text-muted hover:text-white">
                   <XCircle className="w-6 h-6" />
@@ -1533,15 +1521,17 @@ export default function App() {
                 )}
               </div>
 
-              <button 
-                onClick={() => {
-                  setIsLibraryOpen(false);
-                  fileInputRef.current?.click();
-                }}
-                className="w-full mt-6 py-4 bg-gold text-bg-base rounded-2xl font-bold uppercase tracking-widest flex items-center justify-center gap-2"
-              >
-                <CloudUpload className="w-4 h-4" /> New Rulebook
-              </button>
+                {isAdmin && (
+                  <button 
+                    onClick={() => {
+                      setIsLibraryOpen(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="w-full mt-6 py-4 bg-gold text-bg-base rounded-2xl font-bold uppercase tracking-widest flex items-center justify-center gap-2"
+                  >
+                    <CloudUpload className="w-4 h-4" /> New Rulebook
+                  </button>
+                )}
             </motion.div>
           </div>
         )}

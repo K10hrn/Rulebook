@@ -2,21 +2,40 @@
   "entities": {
     "Rulebook": {
       "title": "Rulebook",
-      "description": "Metadata for an uploaded board game rulebook",
+      "description": "Metadata for an uploaded board game rulebook in the global database",
       "type": "object",
       "properties": {
         "name": { "type": "string", "description": "The name of the board game" },
         "size": { "type": "number", "description": "The file size in bytes" },
         "date": { "type": "number", "description": "The upload timestamp" },
-        "storagePath": { "type": "string", "description": "The path to the PDF in Firebase Storage" }
+        "iconUrl": { "type": "string", "description": "Optional custom icon" },
+        "houseRules": { "type": "string", "description": "Custom instructions/context" },
+        "lastUsed": { "type": "number", "description": "Last access timestamp by any user" }
       },
-      "required": ["name", "size", "date", "storagePath"]
+      "required": ["name", "size", "date"]
+    },
+    "RulebookChunk": {
+      "title": "RulebookChunk",
+      "description": "A chunk of PDF binary data",
+      "type": "object",
+      "properties": {
+        "data": { "type": "string", "description": "Base64 encoded chunk of binary data" }
+      },
+      "required": ["data"]
     }
   },
   "firestore": {
-    "/users/{userId}/rulebooks/{rulebookId}": {
+    "/rulebooks/{rulebookId}": {
       "schema": "Rulebook",
-      "description": "User's personal library of board game rulebooks"
+      "description": "Global catalog of board game rulebooks"
+    },
+    "/rulebooks/{rulebookId}/chunks/{chunkId}": {
+      "schema": "RulebookChunk",
+      "description": "Binary data storage for rulebook PDFs"
+    },
+    "/allowlist/{email}": {
+      "schema": "object",
+      "description": "Users permitted to access the archive"
     }
   }
 }

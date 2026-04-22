@@ -50,23 +50,14 @@ service cloud.firestore {
       allow get: if true;
     }
 
-    match /users/{userId} {
-      // User profile (if we ever add it, for now we just match the path)
-      allow get: if isOwner(userId);
+    match /rulebooks/{rulebookId} {
+      allow list: if isVerified();
+      allow get: if isVerified();
+      allow write: if isAdmin();
 
-      match /rulebooks/{rulebookId} {
-        allow list: if isOwner(userId);
-        allow get: if isOwner(userId);
-        
-        allow create: if isOwner(userId) 
-                      && isValidId(rulebookId)
-                      && isValidRulebook(incoming());
-                      
-        allow update: if isOwner(userId)
-                      && isValidRulebook(incoming())
-                      && incoming().date == resource.data.date; // Immutable date
-                      
-        allow delete: if isOwner(userId);
+      match /chunks/{chunkId} {
+        allow list, get: if isVerified();
+        allow write: if isAdmin();
       }
     }
 

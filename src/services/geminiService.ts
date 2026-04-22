@@ -12,6 +12,7 @@ export class RulebookService {
   private pdfData: { data: string; mimeType: string } | null = null;
   private chatHistory: Message[] = [];
   private houseRules: string = "";
+  private sessionHouseRules: string = "";
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
@@ -24,6 +25,10 @@ export class RulebookService {
 
   setHouseRules(rules: string) {
     this.houseRules = rules;
+  }
+
+  setSessionHouseRules(rules: string) {
+    this.sessionHouseRules = rules;
   }
 
   setPDF(base64Data: string, mimeType: string = "application/pdf") {
@@ -47,14 +52,19 @@ export class RulebookService {
           parts: [{ text: msg.content }]
         }));
 
-        const houseRulesSection = this.houseRules 
-          ? `\n\nADDITIONAL HOUSE RULES/CONTEXT:\n${this.houseRules}\n\nPlease prioritize these house rules if they conflict with the official rulebook.` 
-          : "";
+        const houseRulesSection = `
+HOUSE RULES & SPECIAL CONTEXT:
+The following rules have been specified for this game and take precedence over the official rulebook:
+Official House Rules (Global): ${this.houseRules || 'None specified.'}
+Current Session Context (Overrides): ${this.sessionHouseRules || 'None specified.'}
+
+Your instruction: ALWAYS prioritize these house rules over the official rulebook text if a conflict arises.
+`;
 
         const parts = isFirstMessage 
           ? [
               { inlineData: this.pdfData },
-              { text: `You are the lead Board Game Arbiter. I have provided the official rules. Your goal is to provide precise, final rulings based strictly on the text provided. If a rule is ambiguous, interpret it based on the game's intent as found in the text.${houseRulesSection} \n\nIf the information isn't there, state that the Arbiter cannot find a ruling in the provided text. \n\nRuling requested: ${question}` }
+              { text: `You are the Rulebook Arbiter, an expert tabletop game official. Your goal is to provide precise, final rulings based strictly on the provided rulebook. ${houseRulesSection} \n\nIf the information isn't there, state that the Arbiter cannot find a ruling in the provided text. \n\nRuling requested: ${question}` }
             ]
           : [{ text: question }];
 
