@@ -69,7 +69,7 @@ export async function updateRulebookMetadataLocally(id: string, updates: { name?
   const key = `${STORAGE_KEY_PREFIX}${id}`;
   const game = await get<LocalGame>(key);
   if (game) {
-    if (updates.name) game.name = updates.name;
+    if (updates.name !== undefined) game.name = updates.name;
     if (updates.iconUrl !== undefined) game.iconUrl = updates.iconUrl;
     if (updates.lastUsed !== undefined) game.lastUsed = updates.lastUsed;
     if (updates.houseRules !== undefined) game.houseRules = updates.houseRules;

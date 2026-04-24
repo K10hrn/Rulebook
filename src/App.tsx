@@ -169,7 +169,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAllowedUser = async (user: FirebaseUser) => {
-    const adminEmail = 'kellyellen.kenyon@gmail.com';
+    const adminEmail = import.meta.env.VITE_ADMIN_EMAIL as string;
     
     try {
       const allowRef = doc(db, 'allowlist', user.email || '');
@@ -811,28 +811,20 @@ export default function App() {
                     .map((game) => (
                     <motion.div
                       key={game.id}
-                      className="relative group"
+                      className={`group flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer
+                        ${file?.name === game.name
+                          ? 'bg-gold/10 border-gold/40'
+                          : 'bg-white/[0.02] border-transparent hover:border-gold/20 hover:bg-white/[0.04]'}`}
+                      onClick={() => !isGenerating && !managingGame && loadFromLibrary(game)}
                     >
-                      <motion.button
-                        whileHover={{ x: 4 }}
-                        onClick={() => !isGenerating && !managingGame && loadFromLibrary(game)}
-                        className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 relative
-                          ${file?.name === game.name 
-                            ? 'bg-gold/10 border-gold/40' 
-                            : 'bg-white/[0.02] border-transparent hover:border-gold/20 hover:bg-white/[0.04]'}`}
-                      >
-                        <GameIcon 
-                          iconUrl={game.iconUrl} 
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[11px] font-medium text-text-primary truncate">{game.name}</div>
-                          <div className="text-[9px] text-text-muted font-medium italic opacity-60">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
-                        </div>
-                      </motion.button>
-                      
+                      <GameIcon iconUrl={game.iconUrl} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-medium text-text-primary truncate">{game.name}</div>
+                        <div className="text-[9px] text-text-muted font-medium italic opacity-60">{(game.size / 1024 / 1024).toFixed(1)} MB</div>
+                      </div>
                       {!managingGame && (
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
                             onClick={(e) => { e.stopPropagation(); viewRulebook(game); }}
                             className="p-1.5 text-text-muted hover:text-white transition-colors"
                             title="View Rulebook"
@@ -841,14 +833,14 @@ export default function App() {
                           </button>
                           {isAdmin && (
                             <>
-                              <button 
+                              <button
                                 onClick={(e) => openManageModal(game, e)}
                                 className="p-1.5 text-text-muted hover:text-gold transition-colors"
                                 title="Manage Game"
                               >
                                 <Settings className="w-3 h-3" />
                               </button>
-                              <button 
+                              <button
                                 onClick={(e) => deleteFromLibrary(game.id, e)}
                                 className="p-1.5 text-text-muted hover:text-red-500 transition-colors"
                                 title="Delete"
@@ -1041,7 +1033,7 @@ export default function App() {
                               }}
                             />
                           </div>
-                          <div className="flex items-center justify-between sm:justify-start gap-4 w-full sm:w-auto sm:pl-3 sm:border-l border-gold/10">
+                          <div className="flex items-center justify-start gap-4 w-auto sm:pl-3 sm:border-l border-gold/10">
                             <div className="flex items-center gap-2">
                               <input 
                                 type="checkbox" 
@@ -1089,7 +1081,7 @@ export default function App() {
                   </div>
 
                 {library.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 py-2">
                     <AnimatePresence>
                       {[...library]
                         .sort((a, b) => a.name.localeCompare(b.name))
