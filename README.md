@@ -1,71 +1,101 @@
-# 🎲 RuleBook Arbiter
+# 🎲 Rulebook Arbiter
 
-RuleBook Arbiter is a modern web application designed to help you master any board game without the slog of reading a 40-page manual. Upload your PDFs, chat with an AI expert, and get back to the table faster.
+Rulebook Arbiter is an AI-powered board game rulebook assistant. Upload your PDFs, ask questions in plain English, and get precise rulings without flipping through a 40-page manual.
 
 [![Deploy to GitHub Pages](https://github.com/K10hrn/Rulebook/actions/workflows/deploy.yml/badge.svg)](https://github.com/K10hrn/Rulebook/actions/workflows/deploy.yml)
 
-## ✨ Features
+## Features
 
--   **📄 Smart PDF Upload**: Drag and drop your favorite rulebooks directly into the browser.
--   **🤖 AI Rules Expert**: Powered by Gemini 2.0, get context-aware answers calibrated specifically to the rules text.
--   **🛡️ Secure Storage**: Your rule library is synced across devices using Firebase authentication.
--   **📱 Mobile Friendly**: Check a rule on your phone right at the game table.
--   **🔄 Cross-Game Comparison**: Quickly check how mechanics differ between multiple uploaded books.
+- **PDF Upload** — Drag and drop rulebook PDFs directly in the browser
+- **AI Rulings** — Powered by Google Gemini; get context-aware answers grounded in the actual rules text
+- **House Rules** — Add global or session-specific overrides that the AI will always respect
+- **Quick Start / Setup / FAQ** — Generate guides for any uploaded rulebook with one click
+- **Cloud Library** — Rulebooks are stored in Firebase Firestore for authorised users, chunked to handle large files
+- **Local Storage** — Guest users get full functionality via IndexedDB, no sign-in required
+- **Google Drive Sync** — Import PDFs directly from a Google Drive folder (requires sign-in)
+- **Dark / Light Theme** — Toggleable UI theme
 
-## 🚀 Tech Stack
+## Tech Stack
 
--   **Frontend**: React + Vite + TypeScript
--   **Styling**: Tailwind CSS + Motion (Framer Motion)
--   **Authentication**: Firebase Auth
--   **Database**: Google Firestore
--   **AI Engine**: Google Gemini API (@google/genai)
--   **Icons**: Lucide React
+- **Frontend** — React 19 + Vite + TypeScript
+- **Styling** — Tailwind CSS v4 + Motion (Framer Motion)
+- **AI** — Google Gemini API (`@google/genai`)
+- **Auth & Database** — Firebase Auth + Firestore
+- **Icons** — Lucide React
 
-## 🛠️ Getting Started
+## Getting Started
 
 ### Prerequisites
 
--   Node.js (v18 or higher)
--   A Google Gemini API Key
--   A Firebase Project
+- Node.js v18 or higher
+- A [Google Gemini API key](https://aistudio.google.com/app/apikey)
 
 ### Installation
 
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/K10hrn/Rulebook.git
-    cd Rulebook
-    ```
+1. **Clone the repository**
 
-2.  **Install dependencies**:
-    ```bash
-    npm install
-    ```
+   ```bash
+   git clone https://github.com/K10hrn/Rulebook.git
+   cd Rulebook
+   ```
 
-3.  **Environment Setup**:
-    Create a `.env` file in the root directory and add your keys:
-    ```env
-    GEMINI_API_KEY=your_key_here
-    VITE_FIREBASE_API_KEY=your_key
-    # ... other firebase config
-    ```
+2. **Install dependencies**
 
-4.  **Run Development Server**:
-    ```bash
-    npm run dev
-    ```
+   ```bash
+   npm install
+   ```
 
-## 🌐 Deployment (GitHub Pages)
+3. **Create a `.env` file**
 
-This project is configured to deploy automatically via GitHub Actions.
+   ```bash
+   cp .env.example .env
+   ```
 
-1.  Push your changes to the `main` branch.
-2.  Enable **GitHub Actions** as the source in your Repository Settings -> Pages.
-3.  The workflow will build the project and host it at `https://K10hrn.github.io/Rulebook/`.
+   Fill in your values:
 
-## 🔒 Firebase Security
+   | Variable | Description |
+   |---|---|
+   | `GEMINI_API_KEY` | Your Google Gemini API key |
+   | `VITE_ADMIN_EMAIL` | Email address that gets full admin access |
 
-Ensure your Firestore rules are deployed using the included `firestore.rules` file to protect user data. Remember to add `k10hrn.github.io` to your Authorized Domains in the Firebase Console.
+4. **Start the dev server**
+
+   ```bash
+   npm run dev
+   ```
+
+   Open [http://localhost:3000](http://localhost:3000).
+
+### Firebase Configuration
+
+Firebase credentials are stored in `firebase-applet-config.json` at the project root. The repo ships with the original AI Studio project's config — this works out of the box, but if you want to use your own Firebase project:
+
+1. Create a project at [console.firebase.google.com](https://console.firebase.google.com)
+2. Enable **Authentication** (Google provider) and **Firestore**
+3. Replace the values in `firebase-applet-config.json` with your project's config (from Project Settings → Your apps → SDK setup)
+4. Deploy the Firestore security rules: `firebase deploy --only firestore:rules`
+5. Add your domain to **Authorized Domains** in Firebase Console → Authentication → Settings
+
+## Deployment (GitHub Pages)
+
+The project deploys automatically on every push to `main`.
+
+### First-time setup
+
+1. Go to **Repository Settings → Pages** and set the source to **GitHub Actions**
+2. Add the following **Repository Secrets** (Settings → Secrets and variables → Actions):
+   - `GEMINI_API_KEY`
+   - `VITE_ADMIN_EMAIL`
+3. Push to `main` — the workflow builds and deploys to `https://K10hrn.github.io/Rulebook/`
+
+## Access Control
+
+The app uses a Firestore `allowlist` collection to control who can sign in:
+
+- The `VITE_ADMIN_EMAIL` address always has full admin access (upload, delete, manage)
+- Other users can be granted access by adding a document to `allowlist/{email}` with a `role` field (`"admin"` or `"user"`)
+- Users not on the allowlist see an access-denied screen after signing in
 
 ---
-Built with ❤️ for Board Gamers everywhere.
+
+Built with ❤️ for board gamers everywhere.

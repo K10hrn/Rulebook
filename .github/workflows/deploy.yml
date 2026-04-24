@@ -26,6 +26,7 @@ jobs:
         run: npm run build
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_ADMIN_EMAIL: ${{ secrets.VITE_ADMIN_EMAIL }}
           VITE_PROD: "true"
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

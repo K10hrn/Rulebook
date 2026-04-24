@@ -169,7 +169,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAllowedUser = async (user: FirebaseUser) => {
-    const adminEmail = 'kellyellen.kenyon@gmail.com';
+    const adminEmail = import.meta.env.VITE_ADMIN_EMAIL as string;
     
     try {
       const allowRef = doc(db, 'allowlist', user.email || '');
