@@ -6,9 +6,8 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// Use the databaseId if provided, otherwise default. 
-// For AI Studio apps, it's often provided in the config.
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const cfg = firebaseConfig as typeof firebaseConfig & { firestoreDatabaseId?: string };
+export const db = getFirestore(app, cfg.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
