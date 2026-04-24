@@ -1,14 +1,15 @@
 import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
-  deleteDoc, 
-  query, 
-  orderBy, 
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  deleteDoc,
+  query,
+  orderBy,
   writeBatch,
-  updateDoc
+  updateDoc,
+  deleteField
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { LocalGame } from './localRulebookStorage';
@@ -77,13 +78,17 @@ export async function deleteFromGlobal(gameId: string) {
   await deleteDoc(doc(db, COLLECTION_NAME, gameId));
 }
 
-export async function updateGlobalMetadata(id: string, updates: { 
-  name?: string, 
-  iconUrl?: string, 
-  lastUsed?: number, 
-  houseRules?: string 
+export async function updateGlobalMetadata(id: string, updates: {
+  name?: string,
+  iconUrl?: string,
+  lastUsed?: number,
+  houseRules?: string
 }) {
-  await updateDoc(doc(db, COLLECTION_NAME, id), updates);
+  const sanitized: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(updates)) {
+    sanitized[k] = v === undefined ? deleteField() : v;
+  }
+  await updateDoc(doc(db, COLLECTION_NAME, id), sanitized);
 }
 
 function chunkString(str: string, size: number): string[] {
