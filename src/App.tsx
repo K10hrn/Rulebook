@@ -131,7 +131,7 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [driveAccessToken, setDriveAccessToken] = useState<string | null>(localStorage.getItem('drive_access_token'));
+  const [driveAccessToken, setDriveAccessToken] = useState<string | null>(sessionStorage.getItem('drive_access_token'));
   const [isDriveSearching, setIsDriveSearching] = useState(false);
   const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
@@ -204,7 +204,7 @@ export default function App() {
   useEffect(() => {
     // Sync logic: When user logs in/out, reload the library
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      const savedKey = localStorage.getItem('user_gemini_api_key');
+      const savedKey = sessionStorage.getItem('user_gemini_api_key');
       if (savedKey) {
         setUserApiKey(savedKey);
         rulebookService.updateApiKey(savedKey);
@@ -279,7 +279,7 @@ export default function App() {
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         setDriveAccessToken(credential.accessToken);
-        localStorage.setItem('drive_access_token', credential.accessToken);
+        sessionStorage.setItem('drive_access_token', credential.accessToken);
       }
       // Authorization is handled by useEffect listening to auth state
     } catch (err) {
@@ -305,7 +305,7 @@ export default function App() {
   const handleSaveUserApiKey = (key: string) => {
     const trimmed = key.trim();
     setUserApiKey(trimmed);
-    localStorage.setItem('user_gemini_api_key', trimmed);
+    sessionStorage.setItem('user_gemini_api_key', trimmed);
     rulebookService.updateApiKey(trimmed);
     if (trimmed) {
       alert("API Key saved! The Arbiter will now use your personal quota.");
@@ -317,7 +317,7 @@ export default function App() {
     try {
       await signOut(auth);
       setDriveAccessToken(null);
-      localStorage.removeItem('drive_access_token');
+      sessionStorage.removeItem('drive_access_token');
       resetOracle();
     } catch (err) {
       console.error("Logout failed:", err);
@@ -369,7 +369,7 @@ export default function App() {
       console.error("Drive import failed:", err);
       alert("Failed to sync from Google Drive. Your session might have expired.");
       setDriveAccessToken(null);
-      localStorage.removeItem('drive_access_token');
+      sessionStorage.removeItem('drive_access_token');
     } finally {
       setIsDriveSearching(false);
     }
