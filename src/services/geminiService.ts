@@ -164,8 +164,7 @@ Your instruction: ALWAYS prioritize these house rules over the official rulebook
         model: MODEL_NAME,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
-          tools: [{ googleSearch: {} }],
-          toolConfig: { includeServerSideToolInvocations: true }
+          tools: [{ googleSearch: {} }]
         }
       });
       const text = response.text?.trim() || "";
