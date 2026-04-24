@@ -39,7 +39,8 @@ import {
   Sun,
   Moon,
   CloudUpload,
-  RefreshCw
+  RefreshCw,
+  Search
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -70,6 +71,13 @@ import {
   updateGlobalMetadata 
 } from './services/firestoreRulebookStorage';
 import { rulebookService, Message } from './services/geminiService';
+import { googleDriveService } from './services/googleDriveService';
+
+interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+}
 
 interface GameIconProps {
   iconUrl?: string;
@@ -123,6 +131,8 @@ export default function App() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [driveAccessToken, setDriveAccessToken] = useState<string | null>(localStorage.getItem('drive_access_token'));
+  const [isDriveSearching, setIsDriveSearching] = useState(false);
   const [managingGame, setManagingGame] = useState<LocalGame | null>(null);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -269,12 +279,19 @@ export default function App() {
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/drive.readonly');
     
     try {
       const result = await signInWithPopup(auth, provider);
       if (result.user && !result.user.emailVerified) {
         setIsEmailUnverified(true);
         return;
+      }
+      
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setDriveAccessToken(credential.accessToken);
+        localStorage.setItem('drive_access_token', credential.accessToken);
       }
       // Authorization is handled by useEffect listening to auth state
     } catch (err) {
@@ -311,9 +328,62 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setDriveAccessToken(null);
+      localStorage.removeItem('drive_access_token');
       resetOracle();
     } catch (err) {
       console.error("Logout failed:", err);
+    }
+  };
+
+  const handleDriveImport = async () => {
+    if (!isAdmin) return;
+    if (!driveAccessToken) {
+      alert("Please sign in again to enable Google Drive access.");
+      handleLogin();
+      return;
+    }
+
+    setIsDriveSearching(true);
+    try {
+      const folderId = await googleDriveService.findOrCreateFolder(driveAccessToken, "Rulebook");
+      const pdfs = await googleDriveService.listPdfsInFolder(driveAccessToken, folderId);
+      
+      if (pdfs.length === 0) {
+        alert("No PDFs found in your 'Rulebook' folder on Drive. Please add some PDFs there and try again!");
+        return;
+      }
+
+      // For simplicity in this turn, we'll pick the first one or allow a selection
+      // But for a polished feel, let's just show a simple prompt or pick the most recent
+      // IMPROVEMENT: Usually we'd show a modal here. Let's do a simple confirmation for the first one for now
+      // or implement the full Picker logic if preferred. 
+      // The user asked to "upload the pdfs directamente", so maybe they want to sync all?
+      
+      let successCount = 0;
+      for (const pdf of pdfs) {
+        // Check if already in library to avoid duplicates
+        const exists = library.find(g => g.name === pdf.name);
+        if (exists) continue;
+
+        const blob = await googleDriveService.downloadFile(driveAccessToken, pdf.id);
+        const file = new File([blob], pdf.name, { type: 'application/pdf' });
+        await processFile(file);
+        successCount++;
+      }
+
+      if (successCount > 0) {
+        setMessages(prev => [...prev, { role: 'model', content: `✨ **Sync Complete**: I have imported ${successCount} new rulebook(s) from your private 'Rulebook' folder on Google Drive.` }]);
+      } else {
+        alert("All PDFs in that folder are already in the Global Archive.");
+      }
+    } catch (err) {
+      console.error("Drive import failed:", err);
+      alert("Failed to sync from Google Drive. Your session might have expired.");
+      setDriveAccessToken(null);
+      localStorage.removeItem('drive_access_token');
+    } finally {
+      setIsDriveSearching(false);
     }
   };
 
@@ -870,6 +940,25 @@ export default function App() {
               <span className="opacity-40 uppercase text-[8px] md:text-[10px] tracking-widest">Arbiter Ruling on</span> 
               <span className="text-text-gold font-serif italic truncate max-w-[120px] md:max-w-none">{file ? file.name : "Unbound Rules"}</span>
             </h2>
+            {isAdmin && !isActive && (
+              <div className="hidden md:flex items-center gap-2 ml-4">
+                <button 
+                  onClick={handleDriveImport}
+                  disabled={isDriveSearching}
+                  className="bg-gold/10 text-gold border border-gold/30 px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest hover:bg-gold/20 transition-all flex items-center gap-2"
+                  title="Sync from Drive"
+                >
+                  {isDriveSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  Sync
+                </button>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-gold text-bg-base px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-gold/10 whitespace-nowrap"
+                >
+                  + Summon
+                </button>
+              </div>
+            )}
             {isActive && (
               <button 
                 onClick={() => setIsSessionRulesOpen(true)}
@@ -988,21 +1077,13 @@ export default function App() {
                         {library.length} Rulebook{library.length !== 1 ? 's' : ''}
                       </span>
                       {isAdmin && (
-                        <>
-                          <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            className="bg-gold text-bg-base px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-gold/20 whitespace-nowrap"
-                          >
-                            + Summon Arbiter
-                          </button>
-                          <input 
-                            type="file" 
-                            className="hidden" 
-                            ref={fileInputRef} 
-                            onChange={handleFileChange}
-                            accept=".pdf"
-                          />
-                        </>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          ref={fileInputRef} 
+                          onChange={handleFileChange}
+                          accept=".pdf"
+                        />
                       )}
                     </div>
                   </div>
