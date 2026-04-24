@@ -1241,6 +1241,25 @@ export default function App() {
               <div ref={chatEndRef} />
             </div>
 
+            {/* Mobile Quick Actions */}
+            <div className="md:hidden flex gap-2 px-4 pb-2 overflow-x-auto custom-scrollbar shrink-0">
+              {[
+                { label: 'Chat', icon: <MessageCircle className="w-3.5 h-3.5" />, action: handleFocusChat },
+                { label: 'Quick Start', icon: <ChevronRight className="w-3.5 h-3.5" />, action: handleGenerateQuickStart },
+                { label: 'Setup', icon: <ListChecks className="w-3.5 h-3.5" />, action: handleGenerateSetupGuide },
+                { label: 'FAQ', icon: <HelpCircle className="w-3.5 h-3.5" />, action: handleGenerateFAQ },
+              ].map(({ label, icon, action }) => (
+                <button
+                  key={label}
+                  onClick={action}
+                  disabled={isGenerating}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gold/20 bg-gold/5 text-gold whitespace-nowrap text-[10px] font-bold uppercase tracking-wider hover:bg-gold/15 transition-all disabled:opacity-40 shrink-0"
+                >
+                  {icon}{label}
+                </button>
+              ))}
+            </div>
+
             {/* Input Area */}
             <footer className="p-8 bg-gradient-to-t from-bg-base to-transparent">
               <div className="max-w-3xl mx-auto relative group">
