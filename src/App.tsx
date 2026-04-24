@@ -163,8 +163,6 @@ export default function App() {
   const [manageHouseRules, setManageHouseRules] = useState('');
   const [isFindingLogo, setIsFindingLogo] = useState(false);
   const [findLogoError, setFindLogoError] = useState(false);
-  const [findLogoLimit, setFindLogoLimit] = useState(false);
-  
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -235,16 +233,6 @@ export default function App() {
   useEffect(() => {
     loadLibrary();
   }, [currentUser, isEmailUnverified, isNotAllowed]);
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (findLogoLimit) {
-      timer = setTimeout(() => {
-        setFindLogoLimit(false);
-      }, 60000);
-    }
-    return () => clearTimeout(timer);
-  }, [findLogoLimit]);
 
   const loadLibrary = async () => {
     setIsSyncing(true);
@@ -436,7 +424,6 @@ export default function App() {
     if (!manageName.trim() || isFindingLogo) return;
     setIsFindingLogo(true);
     setFindLogoError(false);
-    setFindLogoLimit(false);
     try {
       const url = await rulebookService.findLogoUrl(manageName.trim());
       if (url) {
@@ -446,13 +433,9 @@ export default function App() {
         setTimeout(() => setFindLogoError(false), 3000);
       }
     } catch (err: any) {
-      if (err.message === 'RATE_LIMIT') {
-        setFindLogoLimit(true);
-      } else {
-        console.error("Magic logo failed:", err);
-        setFindLogoError(true);
-        setTimeout(() => setFindLogoError(false), 3000);
-      }
+      console.error("Magic logo failed:", err);
+      setFindLogoError(true);
+      setTimeout(() => setFindLogoError(false), 3000);
     } finally {
       setIsFindingLogo(false);
     }
@@ -1417,18 +1400,14 @@ export default function App() {
                       onClick={handleMagicLogo}
                       disabled={!manageName.trim() || isFindingLogo}
                       className={`px-4 border rounded-xl transition-all flex items-center justify-center disabled:opacity-30 ${
-                        findLogoLimit 
-                          ? 'bg-orange-500/10 border-orange-500/40 text-orange-400' 
-                          : findLogoError 
-                            ? 'bg-red-500/20 border-red-500/50 text-red-500' 
-                            : 'bg-gold/10 border-gold/40 text-text-gold hover:bg-gold/20'
+                        findLogoError
+                          ? 'bg-red-500/20 border-red-500/50 text-red-500'
+                          : 'bg-gold/10 border-gold/40 text-text-gold hover:bg-gold/20'
                       }`}
-                      title={findLogoLimit ? "Rate limit reached. Wait 60s." : findLogoError ? "Logo not found" : "Magic Auto-Logo"}
+                      title={findLogoError ? "Logo not found" : "Magic Auto-Logo"}
                     >
                       {isFindingLogo ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : findLogoLimit ? (
-                        <Clock className="w-4 h-4" />
                       ) : findLogoError ? (
                         <XCircle className="w-4 h-4" />
                       ) : (
@@ -1437,13 +1416,7 @@ export default function App() {
                     </button>
                   </div>
                   <p className="text-[9px] text-text-muted mt-2 pl-1">
-                    {findLogoLimit ? (
-                      <span className="text-orange-400 font-bold flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5" /> Rate limit reached. The Arbiter needs a 60-second break between magic searches.
-                      </span>
-                    ) : (
-                      "✨ Hit the sparkles to fetch the official logo from BoardGameGeek."
-                    )}
+                    ✨ Hit the sparkles to fetch the official logo from BoardGameGeek.
                   </p>
                 </div>
 

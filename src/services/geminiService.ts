@@ -145,36 +145,40 @@ Your instruction: ALWAYS prioritize these house rules over the official rulebook
     return this.askQuestion(prompt, onUpdate);
   }
 
-  /**
-   * Use Gemini's knowledge to find a stable logo URL for a board game.
-   * Prefer Wikipedia or official sources for stability.
-   */
   async findLogoUrl(gameName: string): Promise<string | null> {
-    const prompt = `Search for the high-resolution box art for the board game "${gameName}" from BoardGameGeek (BGG).
-    
-    CRITICAL: YOU MUST FIND THE DIRECT CLOUD ASSET URL (the actual .jpg or .png file) hosted on "cf.geekdo-images.com".
-    BGG image hashes are VERY LONG (often 50+ characters). Do NOT return truncated URLs.
-    
-    Correct Example: https://cf.geekdo-images.com/yLZJCVLIIeb9vR_7V0OBAA__itemrep/img/S5p6P6S2uUnOlv5YF9oK_0qG74o=/fit-in/400x400/filters:strip_icc()/pic4458123.jpg
-    
-    Return ONLY the raw URL as a plain string. If no direct link is found, return "null".`;
-    
+    const PROXY = 'https://corsproxy.io/?url=';
+    const BGG = 'https://boardgamegeek.com/xmlapi2';
+
+    const fetchXml = async (url: string): Promise<Document> => {
+      const resp = await fetch(PROXY + encodeURIComponent(url));
+      if (!resp.ok) throw new Error(`BGG ${resp.status}`);
+      return new DOMParser().parseFromString(await resp.text(), 'text/xml');
+    };
+
     try {
-      const response = await this.ai.models.generateContent({
-        model: MODEL_NAME,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
-      });
-      const text = response.text?.trim() || "";
-      const urlMatch = text.match(/https:\/\/cf\.geekdo-images\.com\/[^\s\"\'\>]+?\.(?:jpg|jpeg|png|webp|gif)/i);
-      return urlMatch ? urlMatch[0] : null;
-    } catch (err: any) {
-      if (err?.message?.includes("429") || err?.status === 429 || err?.message?.includes("RESOURCE_EXHAUSTED")) {
-        throw new Error("RATE_LIMIT");
+      let doc = await fetchXml(`${BGG}/search?query=${encodeURIComponent(gameName)}&type=boardgame&exact=1`);
+      if (doc.querySelectorAll('item').length === 0) {
+        doc = await fetchXml(`${BGG}/search?query=${encodeURIComponent(gameName)}&type=boardgame`);
       }
-      console.error("findLogoUrl failed:", err);
+      const gameId = doc.querySelector('item')?.getAttribute('id');
+      if (!gameId) return null;
+
+      let thingDoc: Document | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const resp = await fetch(PROXY + encodeURIComponent(`${BGG}/thing?id=${gameId}`));
+        if (resp.status === 202) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        thingDoc = new DOMParser().parseFromString(await resp.text(), 'text/xml');
+        break;
+      }
+
+      const thumbnail = thingDoc?.querySelector('thumbnail')?.textContent?.trim();
+      if (!thumbnail) return null;
+      return thumbnail.startsWith('//') ? `https:${thumbnail}` : thumbnail;
+    } catch (err) {
+      console.error('findLogoUrl failed:', err);
       return null;
     }
   }
