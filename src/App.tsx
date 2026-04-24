@@ -1069,7 +1069,6 @@ export default function App() {
                           </div>
 
                           <div className="mt-auto flex items-center justify-between pt-6 border-t border-line/10">
-                            <div>
                             <div className="flex items-center gap-2">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); loadFromLibrary(game); }}
