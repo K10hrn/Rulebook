@@ -146,36 +146,18 @@ Your instruction: ALWAYS prioritize these house rules over the official rulebook
   }
 
   async findLogoUrl(gameName: string): Promise<string | null> {
-    const BGG = 'https://boardgamegeek.com/xmlapi2';
-
-    const fetchXml = async (url: string): Promise<Document> => {
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`BGG ${resp.status}`);
-      return new DOMParser().parseFromString(await resp.text(), 'text/xml');
-    };
-
     try {
-      let doc = await fetchXml(`${BGG}/search?query=${encodeURIComponent(gameName)}&type=boardgame&exact=1`);
-      if (doc.querySelectorAll('item').length === 0) {
-        doc = await fetchXml(`${BGG}/search?query=${encodeURIComponent(gameName)}&type=boardgame`);
-      }
-      const gameId = doc.querySelector('item')?.getAttribute('id');
-      if (!gameId) return null;
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(gameName + ' board game')}&format=json&origin=*&srlimit=3`;
+      const searchResp = await fetch(searchUrl);
+      if (!searchResp.ok) throw new Error(`Wikipedia search ${searchResp.status}`);
+      const searchData = await searchResp.json();
+      const title = searchData.query?.search?.[0]?.title;
+      if (!title) return null;
 
-      let thingDoc: Document | null = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const resp = await fetch(`${BGG}/thing?id=${gameId}`);
-        if (resp.status === 202) {
-          await new Promise(r => setTimeout(r, 2000));
-          continue;
-        }
-        thingDoc = new DOMParser().parseFromString(await resp.text(), 'text/xml');
-        break;
-      }
-
-      const thumbnail = thingDoc?.querySelector('thumbnail')?.textContent?.trim();
-      if (!thumbnail) return null;
-      return thumbnail.startsWith('//') ? `https:${thumbnail}` : thumbnail;
+      const summaryResp = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+      if (!summaryResp.ok) throw new Error(`Wikipedia summary ${summaryResp.status}`);
+      const summary = await summaryResp.json();
+      return summary.thumbnail?.source ?? summary.originalimage?.source ?? null;
     } catch (err) {
       console.error('findLogoUrl failed:', err);
       return null;
