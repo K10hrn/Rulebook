@@ -94,7 +94,7 @@ const GameIcon: React.FC<GameIconProps> = ({ iconUrl, className = "w-8 h-8" }) =
   }, [iconUrl]);
 
   return (
-    <div className={`${className} bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30 rounded overflow-hidden relative transition-all`}>
+    <div className={`${className} bg-gold/5 flex items-center justify-center border border-gold/10 group-hover:border-gold/30 rounded overflow-hidden relative transition-colors`}>
       {iconUrl && !hasError ? (
         <img 
           src={iconUrl} 
@@ -809,9 +809,9 @@ export default function App() {
                   library
                     .sort((a, b) => (b.lastUsed || b.date) - (a.lastUsed || a.date))
                     .map((game) => (
-                    <motion.div
+                    <div
                       key={game.id}
-                      className={`group flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer
+                      className={`group flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer
                         ${file?.name === game.name
                           ? 'bg-gold/10 border-gold/40'
                           : 'bg-white/[0.02] border-transparent hover:border-gold/20 hover:bg-white/[0.04]'}`}
@@ -851,7 +851,7 @@ export default function App() {
                           )}
                         </div>
                       )}
-                    </motion.div>
+                    </div>
                   ))
                 ) : (
                   <p className="text-[10px] text-text-muted italic opacity-50 px-2">Your shelf is empty...</p>
