@@ -640,6 +640,33 @@ export default function App() {
     setStreamingMessage('');
   };
 
+  if (!authLoading && !currentUser) {
+    return (
+      <div className="min-h-screen bg-bg-base flex items-center justify-center p-6">
+        <div className="max-w-sm w-full text-center space-y-8">
+          <div className="flex items-center justify-center gap-3">
+            <div className="relative">
+              <div className="w-12 h-12 bg-gold/10 rounded-xl border border-gold/40 flex items-center justify-center gold-glow">
+                <Library className="w-6 h-6 text-gold" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-gold rounded-lg flex items-center justify-center shadow-lg">
+                <Dices className="w-4 h-4 text-bg-base" />
+              </div>
+            </div>
+            <h1 className="font-serif text-2xl font-light text-text-gold tracking-widest uppercase gold-text-glow">Rulebooks</h1>
+          </div>
+          <p className="text-text-muted text-sm">Sign in to access the archive.</p>
+          <button
+            onClick={handleLogin}
+            className="w-full py-4 bg-gold text-bg-base rounded-2xl font-bold uppercase tracking-widest text-xs hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-gold/20 flex items-center justify-center gap-2"
+          >
+            <LogIn className="w-4 h-4" /> Sign in with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-bg-base flex flex-col md:flex-row text-text-primary">
       {/* Sidebar - Desktop */}
