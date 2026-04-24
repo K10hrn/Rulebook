@@ -146,11 +146,10 @@ Your instruction: ALWAYS prioritize these house rules over the official rulebook
   }
 
   async findLogoUrl(gameName: string): Promise<string | null> {
-    const PROXY = 'https://corsproxy.io/?url=';
     const BGG = 'https://boardgamegeek.com/xmlapi2';
 
     const fetchXml = async (url: string): Promise<Document> => {
-      const resp = await fetch(PROXY + encodeURIComponent(url));
+      const resp = await fetch(url);
       if (!resp.ok) throw new Error(`BGG ${resp.status}`);
       return new DOMParser().parseFromString(await resp.text(), 'text/xml');
     };
@@ -165,7 +164,7 @@ Your instruction: ALWAYS prioritize these house rules over the official rulebook
 
       let thingDoc: Document | null = null;
       for (let attempt = 0; attempt < 3; attempt++) {
-        const resp = await fetch(PROXY + encodeURIComponent(`${BGG}/thing?id=${gameId}`));
+        const resp = await fetch(`${BGG}/thing?id=${gameId}`);
         if (resp.status === 202) {
           await new Promise(r => setTimeout(r, 2000));
           continue;
